@@ -16,7 +16,6 @@ docs/
 dist/
 .aws-sam/
 package-lock.json
-mikrodb/
 
 # Files generated from tests
 coverage/
