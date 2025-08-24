@@ -17,6 +17,7 @@
   "scripts": {
     "start": "npx tsx src/index.ts",
     "test": "npx vitest run --coverage",
+    "build": "npm run clean && tsup src --format esm,cjs --dts && mv dist lib",
     "lint": "npx @biomejs/biome check --write ./src ./tests",
     "clean": "rm -rf test-db-*",
     "prepare": "husky"
@@ -28,6 +29,7 @@
     "esbuild": "0",
     "husky": "9",
     "tsx": "4",
+    "tsup": "8",
     "typescript": "5",
     "vitest": "3"
   }
