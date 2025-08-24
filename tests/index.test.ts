@@ -4,10 +4,10 @@ import { readFile, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 
-import { AtomDB } from '../src/index.js';
+import { PikoDB } from '../src/index.js';
 
-describe('AtomDB', () => {
-  let db: AtomDB;
+describe('PikoDB', () => {
+  let db: PikoDB;
   let testDir: string;
 
   beforeEach(async () => {
@@ -15,7 +15,7 @@ describe('AtomDB', () => {
       process.cwd(),
       `test-db-${Date.now()}-${Math.random().toString(36).substring(7)}`
     );
-    db = new AtomDB({ databaseDirectory: testDir });
+    db = new PikoDB({ databaseDirectory: testDir });
     await db.start();
   });
 
@@ -42,7 +42,7 @@ describe('AtomDB', () => {
       await db.close();
 
       // Create new db instance and verify it loads existing data
-      const newDb = new AtomDB({ databaseDirectory: testDir });
+      const newDb = new PikoDB({ databaseDirectory: testDir });
       await newDb.start();
 
       const result = await newDb.get('existing-table', 'key1');
@@ -57,7 +57,7 @@ describe('AtomDB', () => {
       await writeFile(join(testDir, '.hidden-file'), 'hidden content', 'utf8');
       await writeFile(join(testDir, 'temp-file.tmp'), 'temp content', 'utf8');
 
-      const newDb = new AtomDB({ databaseDirectory: testDir });
+      const newDb = new PikoDB({ databaseDirectory: testDir });
       await newDb.start();
 
       const tables = newDb.listTables();
@@ -266,7 +266,7 @@ describe('AtomDB', () => {
 
     test('It should handle reading from disk when not in memory', async () => {
       // Create new db instance to force disk read
-      const newDb = new AtomDB({ databaseDirectory: testDir });
+      const newDb = new PikoDB({ databaseDirectory: testDir });
       await newDb.start();
 
       const result = await newDb.get('test-table', 'key1');
@@ -351,7 +351,7 @@ describe('AtomDB', () => {
       await db.delete('delete-test', 'key1');
 
       // Create new db instance to verify deletion persisted
-      const newDb = new AtomDB({ databaseDirectory: testDir });
+      const newDb = new PikoDB({ databaseDirectory: testDir });
       await newDb.start();
 
       const deletedValue = await newDb.get('delete-test', 'key1');
@@ -509,7 +509,7 @@ describe('AtomDB', () => {
       await db.close();
 
       // Create new db instance and verify recovery
-      const newDb = new AtomDB({ databaseDirectory: testDir });
+      const newDb = new PikoDB({ databaseDirectory: testDir });
       await newDb.start();
 
       // Verify all data is recovered correctly
@@ -548,7 +548,7 @@ describe('AtomDB', () => {
       await writeFile(filePath, 'invalid json data', 'utf8');
 
       // Create new db instance - should handle corruption gracefully
-      const newDb = new AtomDB({ databaseDirectory: testDir });
+      const newDb = new PikoDB({ databaseDirectory: testDir });
       await newDb.start();
 
       // Should create empty table when corruption detected
@@ -566,7 +566,7 @@ describe('AtomDB', () => {
       const filePath = join(testDir, 'empty-test');
       await writeFile(filePath, '', 'utf8');
 
-      const newDb = new AtomDB({ databaseDirectory: testDir });
+      const newDb = new PikoDB({ databaseDirectory: testDir });
       await newDb.start();
 
       const result = await newDb.get('empty-test');
@@ -590,7 +590,7 @@ describe('AtomDB', () => {
       await db.close();
 
       // Second session - modify data
-      const db2 = new AtomDB({ databaseDirectory: testDir });
+      const db2 = new PikoDB({ databaseDirectory: testDir });
       await db2.start();
 
       const retrieved1 = await db2.get('consistency-test', 'user123');
@@ -603,7 +603,7 @@ describe('AtomDB', () => {
       await db2.close();
 
       // Third session - verify modifications persisted
-      const db3 = new AtomDB({ databaseDirectory: testDir });
+      const db3 = new PikoDB({ databaseDirectory: testDir });
       await db3.start();
 
       const retrieved2 = await db3.get('consistency-test', 'user123');
@@ -616,7 +616,7 @@ describe('AtomDB', () => {
       const originalData = { value: 'original', timestamp: Date.now() };
 
       for (let i = 0; i < 5; i++) {
-        const tempDb = new AtomDB({ databaseDirectory: testDir });
+        const tempDb = new PikoDB({ databaseDirectory: testDir });
         await tempDb.start();
 
         if (i === 0) {
@@ -840,7 +840,7 @@ describe('AtomDB', () => {
 
       // Restart and measure load time
       const restartStartTime = Date.now();
-      const newDb = new AtomDB({ databaseDirectory: testDir });
+      const newDb = new PikoDB({ databaseDirectory: testDir });
       await newDb.start();
 
       // First access should trigger table loading
@@ -891,7 +891,7 @@ describe('AtomDB', () => {
       expect(closeEndTime - closeStartTime).toBeLessThan(1000);
 
       // Verify data persisted
-      const newDb = new AtomDB({ databaseDirectory: testDir });
+      const newDb = new PikoDB({ databaseDirectory: testDir });
       await newDb.start();
 
       expect(await newDb.get('close-test', 'key1')).toBe('value1');
@@ -908,7 +908,7 @@ describe('AtomDB', () => {
       await db.close(); // Should be safe to call again
 
       // Data should still be persisted
-      const newDb = new AtomDB({ databaseDirectory: testDir });
+      const newDb = new PikoDB({ databaseDirectory: testDir });
       await newDb.start();
       expect(await newDb.get('multi-close', 'key1')).toBe('value1');
       await newDb.close();
@@ -1099,7 +1099,7 @@ describe('AtomDB', () => {
       await db.close();
 
       // Restart database
-      const newDb = new AtomDB({ databaseDirectory: testDir });
+      const newDb = new PikoDB({ databaseDirectory: testDir });
       await newDb.start();
 
       expect(await newDb.get('persist-expiration', 'future-key')).toBe(

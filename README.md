@@ -1,6 +1,6 @@
-# atomdb
+# pikodb
 
-AtomDB is a reliable, simple, fast, no-frills key-value database.
+PikoDB is a reliable, simple, fast, no-frills key-value database.
 
 ## 🎯 Design Goals
 
@@ -13,9 +13,9 @@ AtomDB is a reliable, simple, fast, no-frills key-value database.
 ## 🔧 Usage Example
 
 ```typescript
-import atomdb from './atomdb';
+import pikodb from './pikodb';
 
-const db = new atomdb({
+const db = new pikodb({
   databaseDirectory: './my-database'
 });
 

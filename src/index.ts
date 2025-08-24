@@ -14,7 +14,7 @@ export interface DatabaseRecord {
 }
 
 /**
- * AtomDB is a reliable, simple, fast, no-frills key-value database.
+ * PikoDB is a reliable, simple, fast, no-frills key-value database.
  *
  * Features:
  * - Immediate disk persistence with atomic writes
@@ -23,7 +23,7 @@ export interface DatabaseRecord {
  * - Full data type support
  * - Concurrent operation safety
  */
-export class AtomDB {
+export class PikoDB {
   private readonly data: Map<string, Map<string, DatabaseRecord>> = new Map();
   private readonly databaseDirectory: string;
 
