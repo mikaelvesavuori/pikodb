@@ -6,7 +6,7 @@
 
 ---
 
-- **Ultra-minimal footprint** at only ~2.2KB gzipped
+- **Ultra-minimal footprint** at only ~2.5KB gzipped
 - **Immediate disk persistence** with atomic writes - no data loss
 - **Zero configuration** - works out of the box
 - **Multiple named dictionaries** - flexible compression for different data types

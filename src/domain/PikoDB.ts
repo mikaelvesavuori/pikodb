@@ -517,11 +517,11 @@ export class PikoDB {
   }
 
   /**
-   * @description Add a new dictionary for compression after database instantiation.
+   * @description Add or update a dictionary for compression after database instantiation.
+   * If a dictionary with the same name already exists, it will be updated.
    *
    * @param name - The name to identify this dictionary
    * @param dictionary - The dictionary configuration (provide either deflate or inflate)
-   * @throws If a dictionary with the same name already exists
    * @throws If dictionary is invalid (neither deflate nor inflate, or both provided)
    *
    * @example
@@ -537,16 +537,20 @@ export class PikoDB {
    *   }
    * });
    *
+   * // Update the dictionary (no error will be thrown)
+   * db.addDictionary('sensors', {
+   *   deflate: {
+   *     sensor: 's',
+   *     temperature: 't',
+   *     humidity: 'h',
+   *     pressure: 'p'
+   *   }
+   * });
+   *
    * // Use the dictionary when writing
    * await db.write('readings', 'r1', { sensor: 'DHT22', temperature: 23.5 }, undefined, 'sensors');
    */
   addDictionary(name: string, dictionary: Dictionary): void {
-    if (this.dictionaries.has(name)) {
-      throw new Error(
-        `Dictionary "${name}" already exists. Use a different name or remove the existing dictionary first.`
-      );
-    }
-
     const processed = processDictionary(dictionary);
     this.dictionaries.set(name, processed);
   }

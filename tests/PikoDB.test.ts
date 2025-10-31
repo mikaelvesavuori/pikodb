@@ -2198,7 +2198,7 @@ describe('PikoDB', () => {
       await db.close();
     });
 
-    test('It should throw error when adding duplicate dictionary', async () => {
+    test('It should update dictionary when adding duplicate dictionary', async () => {
       const db = new PikoDB({
         databaseDirectory: testDir,
         dictionaries: {
@@ -2208,9 +2208,21 @@ describe('PikoDB', () => {
 
       await db.start();
 
-      expect(() => {
-        db.addDictionary('myDict', { deflate: { b: 'y' } });
-      }).toThrow('Dictionary "myDict" already exists');
+      // Add initial data with first dictionary
+      await db.write('data', 'key1', { a: 'valueA' }, undefined, 'myDict');
+
+      // Update dictionary
+      db.addDictionary('myDict', { deflate: { b: 'y' } });
+
+      // Write with updated dictionary
+      await db.write('data', 'key2', { b: 'valueB' }, undefined, 'myDict');
+
+      // Verify both writes worked
+      const val1 = await db.get('data', 'key1');
+      const val2 = await db.get('data', 'key2');
+
+      expect(val1).toEqual({ a: 'valueA' });
+      expect(val2).toEqual({ b: 'valueB' });
 
       await db.close();
     });
