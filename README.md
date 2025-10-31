@@ -16,7 +16,7 @@
 - **Item expiration** - automatic cleanup of expired records
 - **Concurrent operation safety** - handles parallel reads/writes
 - **Simple architecture** - memory + disk, that's it
-- **High test coverage** - 130+ tests ensuring reliability
+- **High test coverage** - lots of tests ensuring reliability
 - **Zero dependencies** - pure Node.js implementation
 
 ## Installation
@@ -94,150 +94,40 @@ This means:
 
 ### Implementation Details
 
-- A **database** is a directory containing table files
-- Each **table** is a binary file stored on disk
-- Tables are loaded into memory as JavaScript `Map` objects for fast access
-- All write operations use **atomic writes** (temp file → rename)
-- Records include automatic versioning and optional expiration timestamps
-- Optional **dictionary compression** reduces storage size by mapping long keys to short keys
+- A **database** is just a directory containing files (tables).
+- Each **table** is a binary file stored on disk.
+- Tables are loaded into memory as JavaScript `Map` objects for fast access.
+- All write operations use **atomic writes** (temp file → rename).
+- Records include automatic versioning and optional expiration timestamps.
+- Optional **dictionary compression** reduces storage size by mapping long keys to short keys.
 
 ### Characteristics
 
 PikoDB is optimized for:
 
-- **Small to medium datasets** per table (up to 100k records)
-- **Read-heavy workloads** (dictionary compression speeds up reads)
-- **Multi-tenant applications** with many small tables
-- **Serverless environments** where simplicity and reliability matter
-- **Development and testing** where zero configuration is valuable
+- **Small to medium datasets** per table (up to 100k records).
+- **Read-heavy workloads** (dictionary compression speeds up reads).
+- **Multi-tenant applications** with many small tables.
+- **Serverless environments** where simplicity and reliability matter.
+- **Development and testing** where zero configuration is valuable.
 
 Performance considerations:
 
-- Simple key lookups are extremely fast (in-memory Map access)
-- Table loading incurs some latency (disk I/O + deserialization)
-- Write operations are synchronous by design (reliability over speed)
-- Dictionary compression adds ~30-80% overhead on writes, but speeds up reads
+- Simple key lookups are extremely fast (in-memory Map access).
+- Table loading incurs some latency (disk I/O + deserialization).
+- Write operations are synchronous by design (reliability over speed).
+- Dictionary compression adds ~30-80% overhead on writes, but speeds up reads.
 
 ## Dictionary Compression
 
 PikoDB includes optional dictionary-based compression to reduce storage size. This feature:
 
-- **Always compresses metadata** (value, version, timestamp, expiration, dictionaryName) - saves ~22 bytes per record
-- **Optionally compresses user data** if you provide a dictionary
-- **Supports multiple named dictionaries** for different data types
-- **Works recursively** on nested objects and arrays
-- **Transparent** - you always read/write with original keys
-- **Auto-generates inverse mapping** - provide deflate OR inflate, not both
-
-### Without Compression
-
-```typescript
-const db = new PikoDB({
-  databaseDirectory: './data'
-  // No dictionaries - metadata still compressed automatically!
-});
-```
-
-On disk:
-
-```json
-{
-  "d": { "sensor": "DHT22", "temperature": 23.5 },
-  "v": 1,
-  "t": 1761895610965,
-  "x": null
-}
-```
-
-### With Multiple Dictionaries
-
-```typescript
-const db = new PikoDB({
-  databaseDirectory: './data',
-  dictionaries: {
-    sensors: {
-      deflate: {
-        sensor: 's',
-        temperature: 't',
-        humidity: 'h',
-        timestamp: 'ts',
-        location: 'l'
-      }
-    },
-    users: {
-      deflate: {
-        username: 'u',
-        email: 'e',
-        created: 'c'
-      }
-    }
-  }
-});
-
-await db.start();
-
-// Write sensor data with 'sensors' dictionary
-await db.write('readings', 'r1', {
-  sensor: 'DHT22',
-  temperature: 23.5,
-  humidity: 65.2,
-  timestamp: Date.now(),
-  location: 'warehouse-A'
-}, undefined, 'sensors');  // <- specify dictionary name
-
-// Write user data with 'users' dictionary
-await db.write('users', 'user1', {
-  username: 'alice',
-  email: 'alice@example.com',
-  created: Date.now()
-}, undefined, 'users');  // <- different dictionary
-
-// Read with original keys (transparent!)
-const reading = await db.get('readings', 'r1');
-// { sensor: 'DHT22', temperature: 23.5, humidity: 65.2, ... }
-
-const user = await db.get('users', 'user1');
-// { username: 'alice', email: 'alice@example.com', created: ... }
-```
-
-On disk (compressed):
-
-```json
-{
-  "d": { "s": "DHT22", "t": 23.5, "h": 65.2, "ts": 1761895610965, "l": "warehouse-A" },
-  "v": 1,
-  "t": 1761895610965,
-  "x": null,
-  "n": "sensors"
-}
-```
-
-### Dynamic Dictionary Management
-
-You can add and remove dictionaries at runtime:
-
-```typescript
-const db = new PikoDB({ databaseDirectory: './data' });
-await db.start();
-
-// Add a dictionary dynamically
-db.addDictionary('metrics', {
-  deflate: { timestamp: 'ts', value: 'v', unit: 'u' }
-});
-
-// Use the new dictionary
-await db.write('metrics', 'm1',
-  { timestamp: Date.now(), value: 42, unit: 'celsius' },
-  undefined,
-  'metrics'
-);
-
-// List all dictionaries
-console.log(db.listDictionaries()); // ['metrics']
-
-// Remove a dictionary
-db.removeDictionary('metrics');
-```
+- **Always compresses metadata** (value, version, timestamp, expiration, dictionaryName) - saves ~27 bytes per record.
+- **Optionally compresses user data** if you provide a dictionary.
+- **Supports multiple named dictionaries** for different data types.
+- **Works recursively** on nested objects and arrays.
+- **Transparent** - you always read/write with original keys.
+- **Auto-generates inverse mapping** - provide deflate OR inflate, not both.
 
 ### Compression Savings
 
@@ -249,7 +139,7 @@ Real-world examples:
 | Small metrics | 1 | 112 bytes | 104 bytes | 7.14% |
 | Batch metrics | 1,000 | 110,781 bytes | 102,781 bytes | 7.22% |
 
-**Note**: Everyone gets metadata compression for free (~22 bytes per record). Dictionary compression adds additional savings on user data.
+**Note**: Everyone gets metadata compression for free (~27 bytes per record). Dictionary compression adds additional savings on user data.
 
 ### Compression Best Practices
 
@@ -288,18 +178,18 @@ Real-world examples:
 | **Reads (bulk)** | Similar or faster | I/O savings offset decompression |
 | **Storage** | 10-25% smaller | Varies by data structure |
 
-**When to use compression:**
+**✅ When to use compression:**
 
-- ✅ Read-heavy workloads (you get faster reads!)
-- ✅ Storage-constrained environments
-- ✅ Metrics/telemetry data (repetitive structures)
-- ✅ Archival data (write once, read many)
+- Read-heavy workloads (you get faster reads!)
+- Storage-constrained environments
+- Metrics/telemetry data (repetitive structures)
+- Archival data (write once, read many)
 
-**When to skip compression:**
+**⚠️ When to skip compression:**
 
-- ⚠️ Write-heavy workloads (50-80% slower writes)
-- ⚠️ Real-time systems where write latency matters
-- ⚠️ Small datasets where storage isn't a concern
+- Write-heavy workloads (50-80% slower writes...)
+- Real-time systems where write latency matters
+- Small datasets where storage isn't a concern
 
 ## Durability & Crash Safety
 
@@ -856,24 +746,6 @@ PikoDB includes 120+ comprehensive tests covering:
 - Durable writes options
 - Edge cases and error handling
 - Performance benchmarks
-
-## Examples
-
-The repository includes several example files in the [`examples/`](examples/) directory:
-
-- [`example-simple.ts`](examples/example-simple.ts) - Basic usage
-- [`example-mixed-usage.ts`](examples/example-mixed-usage.ts) - With and without compression
-- [`example-key-conflicts.ts`](examples/example-key-conflicts.ts) - Handling dictionary key collisions
-- [`example-nested-keys.ts`](examples/example-nested-keys.ts) - Nested object compression
-- [`demo.ts`](examples/demo.ts) - Comprehensive feature demonstration
-- [`benchmark-performance.ts`](examples/benchmark-performance.ts) - Performance testing
-- [`verify-metadata-compression.ts`](examples/verify-metadata-compression.ts) - Verify compression behavior
-
-Run any example:
-
-```bash
-npx tsx examples/example-simple.ts
-```
 
 ## Contributing
 

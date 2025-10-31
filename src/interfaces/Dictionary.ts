@@ -1,5 +1,7 @@
+/** biome-ignore-all lint/style/noNonNullAssertion: OK */
+
 /**
- * Dictionary for compressing/decompressing object keys in database records.
+ * @description Dictionary for compressing/decompressing object keys in database records.
  * Provide either deflate (long → short) or inflate (short → long) mapping.
  * The inverse will be auto-generated.
  *
@@ -36,13 +38,12 @@
  * // Inverse deflate mapping is auto-generated!
  *
  * @example
- * // Works recursively on nested objects
- * // With dictionary: { metadata: 'm', location: 'l' }
- * // Input:  { metadata: { location: 'warehouse' } }
- * // On disk: { m: { l: 'warehouse' } }
- * // Output: { metadata: { location: 'warehouse' } } // Transparent!
+ * Works recursively on nested objects
+ * With dictionary: { metadata: 'm', location: 'l' }
+ * Input:  { metadata: { location: 'warehouse' } }
+ * On disk: { m: { l: 'warehouse' } }
+ * Output: { metadata: { location: 'warehouse' } } // Transparent!
  */
-/** biome-ignore-all lint/style/noNonNullAssertion: OK */
 export interface Dictionary {
   /**
    * Map of long keys to short keys for compression.
@@ -58,7 +59,7 @@ export interface Dictionary {
 }
 
 /**
- * Processed dictionary with both deflate and inflate mappings.
+ * @description Processed dictionary with both deflate and inflate mappings.
  */
 export interface ProcessedDictionary {
   deflate: Record<string, string>;
@@ -66,7 +67,7 @@ export interface ProcessedDictionary {
 }
 
 /**
- * Process a dictionary by generating the missing inverse mapping.
+ * @description Process a dictionary by generating the missing inverse mapping.
  * Throws if neither deflate nor inflate is provided, or if both are provided.
  */
 export function processDictionary(dict: Dictionary): ProcessedDictionary {
@@ -97,40 +98,36 @@ export function processDictionary(dict: Dictionary): ProcessedDictionary {
 }
 
 /**
- * Invert a mapping object (swap keys and values).
+ * @description Invert a mapping object (swap keys and values).
  */
 function invertMapping(
   mapping: Record<string, string>
 ): Record<string, string> {
   const inverted: Record<string, string> = {};
-  for (const [key, value] of Object.entries(mapping)) {
-    inverted[value] = key;
-  }
+
+  for (const [key, value] of Object.entries(mapping)) inverted[value] = key;
+
   return inverted;
 }
 
 /**
- * Transform a value by mapping its keys according to the dictionary.
+ * @description Transform a value by mapping its keys according to the dictionary.
  * Recursively handles nested objects and arrays.
  */
 export function transformValue(
   value: any,
   mapping: Record<string, string>
 ): any {
-  // Handle null and undefined
   if (value === null || value === undefined) return value;
 
-  // Handle primitives
   if (typeof value !== 'object') return value;
 
-  // Handle arrays
   if (Array.isArray(value))
     return value.map((item) => transformValue(item, mapping));
 
-  // Handle objects
   const transformed: any = {};
   for (const [key, val] of Object.entries(value)) {
-    const newKey = mapping[key] || key; // Use mapped key or original
+    const newKey = mapping[key] || key;
     transformed[newKey] = transformValue(val, mapping);
   }
 

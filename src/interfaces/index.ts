@@ -1,7 +1,7 @@
 import type { Dictionary } from './Dictionary';
 
 /**
- * Configuration options for PikoDB.
+ * @description Configuration options for PikoDB.
  *
  * @example
  * // Basic usage without compression

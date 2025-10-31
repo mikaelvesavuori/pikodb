@@ -23,7 +23,7 @@ import {
 } from '../utils/validation';
 
 /**
- * PikoDB is a reliable, simple, fast, no-frills key-value database.
+ * @description PikoDB is a reliable, simple, fast, no-frills key-value database.
  *
  * Features:
  * - Immediate disk persistence with atomic writes
@@ -350,11 +350,8 @@ export class PikoDB {
       const expiredKeys: string[] = [];
 
       for (const [key, record] of table.entries()) {
-        if (this.isExpired(record)) {
-          expiredKeys.push(key);
-        } else {
-          size++;
-        }
+        if (this.isExpired(record)) expiredKeys.push(key);
+        else size++;
       }
 
       if (expiredKeys.length > 0) {
@@ -659,7 +656,8 @@ export class PikoDB {
 
   /**
    * @description Serialize table data to buffer for disk storage.
-   * Uses short keys for metadata (d, v, t, x, n). Optionally compresses user data if dictionary provided.
+   * Uses short keys for metadata (d, v, t, x, n).
+   * Optionally compresses user data if dictionary provided.
    */
   private serializeTable(table: Map<string, DatabaseRecord>): Buffer {
     const data = Array.from(table.entries()).map(([key, record]) => {
@@ -678,9 +676,7 @@ export class PikoDB {
       };
 
       // Only include dictionary name if it exists
-      if (record.dictionaryName) {
-        compressed.n = record.dictionaryName;
-      }
+      if (record.dictionaryName) compressed.n = record.dictionaryName;
 
       return [key, compressed];
     });

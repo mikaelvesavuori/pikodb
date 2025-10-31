@@ -1,5 +1,5 @@
 /**
- * Validates table name to prevent directory traversal and other security issues.
+ * @description Validates table name to prevent directory traversal and other security issues.
  */
 export function validateTableName(tableName: string): void {
   if (!tableName || typeof tableName !== 'string')
@@ -54,7 +54,7 @@ export function validateTableName(tableName: string): void {
 }
 
 /**
- * Validates key to ensure it's a valid string.
+ * @description Validates key to ensure it's a valid string.
  */
 export function validateKey(key: string): void {
   if (key === undefined || key === null) throw new Error('Key must be defined');
@@ -70,12 +70,11 @@ export function validateKey(key: string): void {
 }
 
 /**
- * Validates value to ensure it's JSON-serializable.
+ * @descriptionValidates value to ensure it's JSON-serializable.
  */
 export function validateValue(value: any): void {
-  if (value === undefined) {
+  if (value === undefined)
     throw new Error('Value must not be undefined (use null instead)');
-  }
 
   // Check for non-serializable types
   const type = typeof value;
@@ -91,7 +90,7 @@ export function validateValue(value: any): void {
 
   try {
     const serialized = JSON.stringify(value);
-    // Check if serialization resulted in undefined (e.g., for functions, symbols)
+
     if (serialized === undefined)
       throw new Error(
         'Value must be JSON-serializable: value cannot be serialized'
