@@ -1366,9 +1366,9 @@ describe('PikoDB', () => {
       // Verify the compressed file is smaller
       const filePath = join(testDir, 'test');
       const fileContent = await readFile(filePath, 'utf8');
-      expect(fileContent).toContain('ver'); // Compressed 'version'
-      expect(fileContent).toContain('ts'); // Compressed 'timestamp'
-      expect(fileContent).toContain('exp'); // Compressed 'expiration'
+      expect(fileContent).toContain('v'); // Compressed 'version'
+      expect(fileContent).toContain('t'); // Compressed 'timestamp'
+      expect(fileContent).toContain('x'); // Compressed 'expiration'
       expect(fileContent).not.toContain('version'); // Original should not exist
       expect(fileContent).not.toContain('timestamp');
       expect(fileContent).not.toContain('expiration');

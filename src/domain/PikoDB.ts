@@ -547,7 +547,7 @@ export class PikoDB {
 
   /**
    * @description Serialize table data to buffer for disk storage.
-   * Uses short keys for metadata (v, ver, ts, exp). Optionally compresses user data if dictionary provided.
+   * Uses short keys for metadata (d, v, t, x). Optionally compresses user data if dictionary provided.
    */
   private serializeTable(table: Map<string, DatabaseRecord>): Buffer {
     const data = Array.from(table.entries()).map(([key, record]) => {
@@ -555,12 +555,12 @@ export class PikoDB {
       return [
         key,
         {
-          v: this.dictionary
+          d: this.dictionary
             ? transformValue(record.value, this.dictionary.deflate)
             : record.value,
-          ver: record.version,
-          ts: record.timestamp,
-          exp: record.expiration
+          v: record.version,
+          t: record.timestamp,
+          x: record.expiration
         }
       ];
     });
@@ -570,7 +570,7 @@ export class PikoDB {
 
   /**
    * @description Deserialize buffer data back to table map.
-   * Directly maps short keys (v, ver, ts, exp) to full property names. Optionally decompresses user data if dictionary provided.
+   * Directly maps short keys (d, v, t, x) to full property names. Optionally decompresses user data if dictionary provided.
    */
   private deserializeTable(buffer: Buffer): Map<string, DatabaseRecord> {
     const data = JSON.parse(buffer.toString('utf8'));
@@ -581,11 +581,11 @@ export class PikoDB {
         key,
         {
           value: this.dictionary
-            ? transformValue(compressed.v, this.dictionary.inflate)
-            : compressed.v,
-          version: compressed.ver,
-          timestamp: compressed.ts,
-          expiration: compressed.exp
+            ? transformValue(compressed.d, this.dictionary.inflate)
+            : compressed.d,
+          version: compressed.v,
+          timestamp: compressed.t,
+          expiration: compressed.x
         }
       ];
     });
