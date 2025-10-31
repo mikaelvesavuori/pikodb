@@ -118,19 +118,14 @@ export function transformValue(
   mapping: Record<string, string>
 ): any {
   // Handle null and undefined
-  if (value === null || value === undefined) {
-    return value;
-  }
+  if (value === null || value === undefined) return value;
 
   // Handle primitives
-  if (typeof value !== 'object') {
-    return value;
-  }
+  if (typeof value !== 'object') return value;
 
   // Handle arrays
-  if (Array.isArray(value)) {
+  if (Array.isArray(value))
     return value.map((item) => transformValue(item, mapping));
-  }
 
   // Handle objects
   const transformed: any = {};

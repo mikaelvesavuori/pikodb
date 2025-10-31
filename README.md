@@ -728,7 +728,6 @@ The repository includes several example files in the [`examples/`](examples/) di
 - [`example-mixed-usage.ts`](examples/example-mixed-usage.ts) - With and without compression
 - [`example-key-conflicts.ts`](examples/example-key-conflicts.ts) - Handling dictionary key collisions
 - [`example-nested-keys.ts`](examples/example-nested-keys.ts) - Nested object compression
-- [`example-dx.ts`](examples/example-dx.ts) - Developer experience examples
 - [`demo.ts`](examples/demo.ts) - Comprehensive feature demonstration
 - [`benchmark-performance.ts`](examples/benchmark-performance.ts) - Performance testing
 - [`verify-metadata-compression.ts`](examples/verify-metadata-compression.ts) - Verify compression behavior

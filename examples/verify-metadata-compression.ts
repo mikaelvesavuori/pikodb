@@ -1,5 +1,6 @@
 import { readFile, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+
 import { PikoDB } from '../src/index.js';
 
 async function verify() {

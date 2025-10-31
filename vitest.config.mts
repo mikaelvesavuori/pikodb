@@ -6,7 +6,7 @@ export default defineConfig({
       enabled: true,
       reportsDirectory: './coverage',
       reporter: ['text', 'lcov'],
-      include: ['src/*.ts'],
+      include: ['src/*.ts', 'src/**/*.ts'],
       exclude: ['src/interfaces', '**/node_modules/**']
     },
     include: ['tests/*.ts']
