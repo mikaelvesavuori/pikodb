@@ -87,7 +87,6 @@ describe('PikoDB', () => {
       await db.write('types', 'array', [1, 2, 3]);
       await db.write('types', 'object', { nested: { value: 'test' } });
       await db.write('types', 'null', null);
-      await db.write('types', 'undefined', undefined);
 
       expect(await db.get('types', 'string')).toBe('hello world');
       expect(await db.get('types', 'number')).toBe(42);
@@ -97,7 +96,6 @@ describe('PikoDB', () => {
         nested: { value: 'test' }
       });
       expect(await db.get('types', 'null')).toBe(null);
-      expect(await db.get('types', 'undefined')).toBe(undefined);
     });
 
     test('It should handle complex nested objects', async () => {
@@ -396,9 +394,15 @@ describe('PikoDB', () => {
     });
 
     test('It should handle invalid parameters gracefully', async () => {
-      expect(await db.delete('', 'key1')).toBe(false);
-      expect(await db.delete('table1', '')).toBe(false);
-      expect(await db.delete('table1', undefined as any)).toBe(false);
+      await expect(db.delete('', 'key1')).rejects.toThrow(
+        'Table name must be a non-empty string'
+      );
+      await expect(db.delete('table1', '')).rejects.toThrow(
+        'Key must not be empty'
+      );
+      await expect(db.delete('table1', undefined as any)).rejects.toThrow(
+        'Key must be defined'
+      );
     });
   });
 
@@ -639,8 +643,8 @@ describe('PikoDB', () => {
       expect(typeof result).toBe('boolean');
     });
 
-    test('It should handle extremely large keys and values', async () => {
-      const largeKey = 'x'.repeat(10000); // 10KB key
+    test('It should handle extremely large values', async () => {
+      const largeKey = 'x'.repeat(1024); // Max allowed key size
       const largeValue = {
         data: 'y'.repeat(500000), // 500KB value
         metadata: {
@@ -1268,6 +1272,902 @@ describe('PikoDB', () => {
 
       expect(size).toBe(50); // Only valid records
       expect(endTime - startTime).toBeLessThan(2000); // Should complete within 2 seconds
+    });
+  });
+
+  describe('Dictionary Compression', () => {
+    test('It should compress and decompress data with deflate mapping', async () => {
+      const compressedDb = new PikoDB({
+        databaseDirectory: testDir,
+        dictionary: {
+          deflate: {
+            sensor: 's',
+            identity: 'i',
+            temperature: 't',
+            timestamp: 'ts',
+            metadata: 'm'
+          }
+        }
+      });
+
+      await compressedDb.start();
+
+      const testData = {
+        sensor: 'sensor-001',
+        identity: 'device-123',
+        temperature: 23.5,
+        metadata: {
+          location: 'room-42',
+          status: 'active'
+        }
+      };
+
+      await compressedDb.write('metrics', 'reading1', testData);
+
+      // Should be able to read back the original data structure
+      const retrieved = await compressedDb.get('metrics', 'reading1');
+      expect(retrieved).toEqual(testData);
+
+      await compressedDb.close();
+    });
+
+    test('It should compress and decompress data with inflate mapping', async () => {
+      const compressedDb = new PikoDB({
+        databaseDirectory: testDir,
+        dictionary: {
+          inflate: {
+            s: 'sensor',
+            i: 'identity',
+            t: 'temperature',
+            ts: 'timestamp',
+            m: 'metadata'
+          }
+        }
+      });
+
+      await compressedDb.start();
+
+      const testData = {
+        sensor: 'sensor-001',
+        identity: 'device-123',
+        temperature: 23.5
+      };
+
+      await compressedDb.write('metrics', 'reading1', testData);
+
+      const retrieved = await compressedDb.get('metrics', 'reading1');
+      expect(retrieved).toEqual(testData);
+
+      await compressedDb.close();
+    });
+
+    test('It should compress metadata fields (version, timestamp, expiration)', async () => {
+      const compressedDb = new PikoDB({
+        databaseDirectory: testDir,
+        dictionary: {
+          deflate: {
+            value: 'v',
+            version: 'ver',
+            timestamp: 'ts',
+            expiration: 'exp'
+          }
+        }
+      });
+
+      await compressedDb.start();
+
+      const futureTime = Date.now() + 3600000;
+      await compressedDb.write('test', 'key1', { data: 'test' }, futureTime);
+
+      // Verify data is still accessible after compression
+      const retrieved = await compressedDb.get('test', 'key1');
+      expect(retrieved).toEqual({ data: 'test' });
+
+      // Verify the compressed file is smaller
+      const filePath = join(testDir, 'test');
+      const fileContent = await readFile(filePath, 'utf8');
+      expect(fileContent).toContain('ver'); // Compressed 'version'
+      expect(fileContent).toContain('ts'); // Compressed 'timestamp'
+      expect(fileContent).toContain('exp'); // Compressed 'expiration'
+      expect(fileContent).not.toContain('version'); // Original should not exist
+      expect(fileContent).not.toContain('timestamp');
+      expect(fileContent).not.toContain('expiration');
+
+      await compressedDb.close();
+    });
+
+    test('It should reduce file size with compression', async () => {
+      const testData = {
+        sensor: 'sensor-001',
+        identity: 'device-123',
+        temperature: 23.5,
+        humidity: 65.2,
+        pressure: 1013.25,
+        timestamp: Date.now(),
+        metadata: {
+          location: 'warehouse-section-A',
+          deviceType: 'environmental-monitor',
+          calibrationDate: '2024-01-01'
+        }
+      };
+
+      // Write without compression
+      const uncompressedDb = new PikoDB({
+        databaseDirectory: join(
+          testDir,
+          `uncompressed-${Math.random().toString(36).substring(7)}`
+        )
+      });
+      await uncompressedDb.start();
+      await uncompressedDb.write('metrics', 'reading1', testData);
+      await uncompressedDb.close();
+
+      const uncompressedPath = join(
+        // @ts-expect-error
+        uncompressedDb.databaseDirectory,
+        'metrics'
+      );
+      const uncompressedContent = await readFile(uncompressedPath, 'utf8');
+      const uncompressedSize = uncompressedContent.length;
+
+      // Write with compression
+      const compressedDb = new PikoDB({
+        databaseDirectory: join(
+          testDir,
+          `compressed-${Math.random().toString(36).substring(7)}`
+        ),
+        dictionary: {
+          deflate: {
+            sensor: 's',
+            identity: 'i',
+            temperature: 't',
+            humidity: 'h',
+            pressure: 'p',
+            timestamp: 'ts',
+            metadata: 'm',
+            location: 'l',
+            deviceType: 'd',
+            calibrationDate: 'c',
+            version: 'v',
+            expiration: 'e'
+          }
+        }
+      });
+      await compressedDb.start();
+      await compressedDb.write('metrics', 'reading1', testData);
+      await compressedDb.close();
+
+      // @ts-expect-error
+      const compressedPath = join(compressedDb.databaseDirectory, 'metrics');
+      const compressedContent = await readFile(compressedPath, 'utf8');
+      const compressedSize = compressedContent.length;
+
+      // Compressed should be smaller
+      expect(compressedSize).toBeLessThan(uncompressedSize);
+    });
+
+    test('It should handle nested objects with compression', async () => {
+      const compressedDb = new PikoDB({
+        databaseDirectory: testDir,
+        dictionary: {
+          deflate: {
+            user: 'u',
+            profile: 'p',
+            settings: 's',
+            notifications: 'n',
+            email: 'e',
+            push: 'pu',
+            theme: 't'
+          }
+        }
+      });
+
+      await compressedDb.start();
+
+      const complexData = {
+        user: {
+          profile: {
+            settings: {
+              notifications: {
+                email: true,
+                push: false
+              },
+              theme: 'dark'
+            }
+          }
+        }
+      };
+
+      await compressedDb.write('users', 'user1', complexData);
+
+      const retrieved = await compressedDb.get('users', 'user1');
+      expect(retrieved).toEqual(complexData);
+
+      await compressedDb.close();
+    });
+
+    test('It should handle arrays with compression', async () => {
+      const compressedDb = new PikoDB({
+        databaseDirectory: testDir,
+        dictionary: {
+          deflate: {
+            sensor: 's',
+            readings: 'r',
+            temperature: 't',
+            timestamp: 'ts'
+          }
+        }
+      });
+
+      await compressedDb.start();
+
+      const arrayData = {
+        sensor: 'sensor-001',
+        readings: [
+          { temperature: 23.5, timestamp: Date.now() },
+          { temperature: 24.1, timestamp: Date.now() },
+          { temperature: 23.8, timestamp: Date.now() }
+        ]
+      };
+
+      await compressedDb.write('sensors', 'sensor1', arrayData);
+
+      const retrieved = await compressedDb.get('sensors', 'sensor1');
+      expect(retrieved).toEqual(arrayData);
+
+      await compressedDb.close();
+    });
+
+    test('It should persist compressed data across restarts', async () => {
+      const dictionary = {
+        deflate: {
+          sensor: 's',
+          identity: 'i',
+          temperature: 't'
+        }
+      };
+
+      // First session with compression
+      const db1 = new PikoDB({
+        databaseDirectory: testDir,
+        dictionary
+      });
+      await db1.start();
+
+      const testData = {
+        sensor: 'sensor-001',
+        identity: 'device-123',
+        temperature: 23.5
+      };
+
+      await db1.write('metrics', 'reading1', testData);
+      await db1.close();
+
+      // Second session with same compression
+      const db2 = new PikoDB({
+        databaseDirectory: testDir,
+        dictionary
+      });
+      await db2.start();
+
+      const retrieved = await db2.get('metrics', 'reading1');
+      expect(retrieved).toEqual(testData);
+
+      await db2.close();
+    });
+
+    test('It should handle keys not in dictionary gracefully', async () => {
+      const compressedDb = new PikoDB({
+        databaseDirectory: testDir,
+        dictionary: {
+          deflate: {
+            sensor: 's',
+            temperature: 't'
+          }
+        }
+      });
+
+      await compressedDb.start();
+
+      const testData = {
+        sensor: 'sensor-001',
+        temperature: 23.5,
+        unmappedKey: 'this-key-is-not-in-dictionary',
+        anotherUnmapped: { nested: 'value' }
+      };
+
+      await compressedDb.write('metrics', 'reading1', testData);
+
+      // Should still work, unmapped keys stay as-is
+      const retrieved = await compressedDb.get('metrics', 'reading1');
+      expect(retrieved).toEqual(testData);
+
+      await compressedDb.close();
+    });
+
+    test('It should handle null and undefined values with compression', async () => {
+      const compressedDb = new PikoDB({
+        databaseDirectory: testDir,
+        dictionary: {
+          deflate: {
+            nullField: 'n',
+            undefinedField: 'u',
+            normalField: 'nf'
+          }
+        }
+      });
+
+      await compressedDb.start();
+
+      const testData = {
+        nullField: null,
+        undefinedField: undefined,
+        normalField: 'value'
+      };
+
+      await compressedDb.write('nulls', 'key1', testData);
+
+      const retrieved = await compressedDb.get('nulls', 'key1');
+      expect(retrieved).toEqual(testData);
+
+      await compressedDb.close();
+    });
+
+    test('It should handle primitive values with compression', async () => {
+      const compressedDb = new PikoDB({
+        databaseDirectory: testDir,
+        dictionary: {
+          deflate: {
+            sensor: 's',
+            value: 'v'
+          }
+        }
+      });
+
+      await compressedDb.start();
+
+      // Primitive values should not be transformed
+      await compressedDb.write('primitives', 'string', 'hello');
+      await compressedDb.write('primitives', 'number', 42);
+      await compressedDb.write('primitives', 'boolean', true);
+
+      expect(await compressedDb.get('primitives', 'string')).toBe('hello');
+      expect(await compressedDb.get('primitives', 'number')).toBe(42);
+      expect(await compressedDb.get('primitives', 'boolean')).toBe(true);
+
+      await compressedDb.close();
+    });
+
+    test('It should handle concurrent writes with compression', async () => {
+      const compressedDb = new PikoDB({
+        databaseDirectory: testDir,
+        dictionary: {
+          deflate: {
+            sensor: 's',
+            reading: 'r',
+            timestamp: 'ts'
+          }
+        }
+      });
+
+      await compressedDb.start();
+
+      const promises = Array.from({ length: 100 }, (_, i) =>
+        compressedDb.write('concurrent', `key${i}`, {
+          sensor: `sensor-${i}`,
+          reading: i * 10,
+          timestamp: Date.now()
+        })
+      );
+
+      const results = await Promise.all(promises);
+      expect(results.every((r) => r === true)).toBe(true);
+
+      // Verify all data was written correctly
+      for (let i = 0; i < 100; i++) {
+        const value = await compressedDb.get('concurrent', `key${i}`);
+        expect(value).toEqual({
+          sensor: `sensor-${i}`,
+          reading: i * 10,
+          timestamp: expect.any(Number)
+        });
+      }
+
+      await compressedDb.close();
+    });
+
+    test('It should throw error if neither deflate nor inflate is provided', async () => {
+      expect(() => {
+        new PikoDB({
+          databaseDirectory: testDir,
+          dictionary: {}
+        });
+      }).toThrow('Dictionary must provide either deflate or inflate mapping');
+    });
+
+    test('It should throw error if both deflate and inflate are provided', async () => {
+      expect(() => {
+        new PikoDB({
+          databaseDirectory: testDir,
+          dictionary: {
+            deflate: { sensor: 's' },
+            inflate: { s: 'sensor' }
+          }
+        });
+      }).toThrow(
+        'Dictionary should provide only one of deflate or inflate (not both)'
+      );
+    });
+
+    test('It should handle expiration cleanup with compressed data', async () => {
+      const compressedDb = new PikoDB({
+        databaseDirectory: testDir,
+        dictionary: {
+          deflate: {
+            sensor: 's',
+            value: 'v',
+            timestamp: 'ts',
+            version: 'ver',
+            expiration: 'exp'
+          }
+        }
+      });
+
+      await compressedDb.start();
+
+      const pastTime = Date.now() - 1000;
+      const futureTime = Date.now() + 3600000;
+
+      await compressedDb.write(
+        'cleanup',
+        'expired',
+        { sensor: 'sensor-1', value: 100 },
+        pastTime
+      );
+      await compressedDb.write(
+        'cleanup',
+        'valid',
+        { sensor: 'sensor-2', value: 200 },
+        futureTime
+      );
+
+      const cleanedCount = await compressedDb.cleanupExpired('cleanup');
+      expect(cleanedCount).toBe(1);
+
+      const allData = await compressedDb.get('cleanup');
+      expect(allData).toHaveLength(1);
+      expect(allData[0][1]).toEqual({ sensor: 'sensor-2', value: 200 });
+
+      await compressedDb.close();
+    });
+
+    test('It should work without dictionary (backwards compatibility)', async () => {
+      const normalDb = new PikoDB({
+        databaseDirectory: testDir
+      });
+
+      await normalDb.start();
+
+      const testData = {
+        sensor: 'sensor-001',
+        temperature: 23.5
+      };
+
+      await normalDb.write('metrics', 'reading1', testData);
+
+      const retrieved = await normalDb.get('metrics', 'reading1');
+      expect(retrieved).toEqual(testData);
+
+      await normalDb.close();
+    });
+  });
+
+  describe('Input Validation', () => {
+    describe('Table Name Validation', () => {
+      test('It should reject empty table name', async () => {
+        await expect(db.write('', 'key1', 'value')).rejects.toThrow(
+          'Table name must be a non-empty string'
+        );
+      });
+
+      test('It should reject non-string table name', async () => {
+        // @ts-expect-error Testing invalid input
+        await expect(db.write(123, 'key1', 'value')).rejects.toThrow(
+          'Table name must be a non-empty string'
+        );
+      });
+
+      test('It should reject table name with path separator /', async () => {
+        await expect(db.write('table/name', 'key1', 'value')).rejects.toThrow(
+          'Table name must not contain path separators'
+        );
+      });
+
+      test('It should reject table name with path separator \\', async () => {
+        await expect(db.write('table\\name', 'key1', 'value')).rejects.toThrow(
+          'Table name must not contain path separators'
+        );
+      });
+
+      test('It should reject table name with parent directory reference', async () => {
+        await expect(db.write('..', 'key1', 'value')).rejects.toThrow(
+          'Table name must not contain ".."'
+        );
+        await expect(db.write('table..name', 'key1', 'value')).rejects.toThrow(
+          'Table name must not contain ".."'
+        );
+      });
+
+      test('It should reject table name starting with dot', async () => {
+        await expect(db.write('.hidden', 'key1', 'value')).rejects.toThrow(
+          'Table name must not start with "."'
+        );
+      });
+
+      test('It should reject table name with null bytes', async () => {
+        await expect(db.write('table\0name', 'key1', 'value')).rejects.toThrow(
+          'Table name must not contain null bytes'
+        );
+      });
+
+      test('It should reject table name exceeding 255 characters', async () => {
+        const longName = 'a'.repeat(256);
+        await expect(db.write(longName, 'key1', 'value')).rejects.toThrow(
+          'Table name must not exceed 255 characters'
+        );
+      });
+
+      test('It should reject reserved filesystem names', async () => {
+        const reservedNames = ['CON', 'PRN', 'AUX', 'NUL', 'COM1', 'LPT1'];
+
+        for (const name of reservedNames) {
+          await expect(db.write(name, 'key1', 'value')).rejects.toThrow(
+            `Table name "${name}" is reserved by the filesystem`
+          );
+        }
+      });
+
+      test('It should accept valid table names', async () => {
+        const validNames = [
+          'users',
+          'my-table',
+          'table_name',
+          'table123',
+          'MyTable',
+          'a'.repeat(200) // Long name (not max to avoid filesystem issues with temp files)
+        ];
+
+        for (const name of validNames) {
+          const result = await db.write(name, 'key1', 'value');
+          expect(result).toBe(true);
+        }
+      });
+    });
+
+    describe('Key Validation', () => {
+      test('It should reject undefined key', async () => {
+        // @ts-expect-error Testing invalid input
+        await expect(db.write('table', undefined, 'value')).rejects.toThrow(
+          'Key must be defined'
+        );
+      });
+
+      test('It should reject null key', async () => {
+        // @ts-expect-error Testing invalid input
+        await expect(db.write('table', null, 'value')).rejects.toThrow(
+          'Key must be defined'
+        );
+      });
+
+      test('It should reject non-string key', async () => {
+        // @ts-expect-error Testing invalid input
+        await expect(db.write('table', 123, 'value')).rejects.toThrow(
+          'Key must be a string'
+        );
+      });
+
+      test('It should reject empty string key', async () => {
+        await expect(db.write('table', '', 'value')).rejects.toThrow(
+          'Key must not be empty'
+        );
+      });
+
+      test('It should reject key exceeding 1024 characters', async () => {
+        const longKey = 'k'.repeat(1025);
+        await expect(db.write('table', longKey, 'value')).rejects.toThrow(
+          'Key must not exceed 1024 characters'
+        );
+      });
+
+      test('It should reject key with null bytes', async () => {
+        await expect(db.write('table', 'key\0name', 'value')).rejects.toThrow(
+          'Key must not contain null bytes'
+        );
+      });
+
+      test('It should accept valid keys', async () => {
+        const validKeys = [
+          'key1',
+          'my-key',
+          'key_name',
+          'key.with.dots',
+          'key:with:colons',
+          'k'.repeat(1024), // Max length
+          'special!@#$%^&*()chars'
+        ];
+
+        for (const key of validKeys) {
+          const result = await db.write('table', key, 'value');
+          expect(result).toBe(true);
+        }
+      });
+    });
+
+    describe('Value Validation', () => {
+      test('It should reject undefined value', async () => {
+        await expect(db.write('table', 'key1', undefined)).rejects.toThrow(
+          'Value must not be undefined'
+        );
+      });
+
+      test('It should reject non-JSON-serializable values', async () => {
+        const circularObj: any = { a: 1 };
+        circularObj.self = circularObj;
+
+        await expect(db.write('table', 'key1', circularObj)).rejects.toThrow(
+          'Value must be JSON-serializable'
+        );
+      });
+
+      test('It should reject functions', async () => {
+        const fn = () => console.log('test');
+
+        await expect(db.write('table', 'key1', fn)).rejects.toThrow(
+          'Value must be JSON-serializable'
+        );
+      });
+
+      test('It should reject symbols', async () => {
+        const sym = Symbol('test');
+
+        await expect(db.write('table', 'key1', sym)).rejects.toThrow(
+          'Value must be JSON-serializable'
+        );
+      });
+
+      test('It should accept null value', async () => {
+        const result = await db.write('table', 'key1', null);
+        expect(result).toBe(true);
+        expect(await db.get('table', 'key1')).toBe(null);
+      });
+
+      test('It should accept all JSON-serializable values', async () => {
+        const validValues = [
+          'string',
+          42,
+          true,
+          false,
+          null,
+          [1, 2, 3],
+          { nested: { object: 'value' } },
+          [{ mixed: 'array' }, 123, 'test']
+        ];
+
+        for (let i = 0; i < validValues.length; i++) {
+          const result = await db.write('table', `key${i}`, validValues[i]);
+          expect(result).toBe(true);
+          expect(await db.get('table', `key${i}`)).toEqual(validValues[i]);
+        }
+      });
+    });
+
+    describe('Validation in Other Methods', () => {
+      test('It should validate table name in get()', async () => {
+        await expect(db.get('')).rejects.toThrow(
+          'Table name must be a non-empty string'
+        );
+        await expect(db.get('../etc/passwd')).rejects.toThrow(
+          'Table name must not contain path separators'
+        );
+      });
+
+      test('It should validate key in get()', async () => {
+        await expect(db.get('table', '')).rejects.toThrow(
+          'Key must not be empty'
+        );
+      });
+
+      test('It should validate table name in delete()', async () => {
+        await expect(db.delete('', 'key1')).rejects.toThrow(
+          'Table name must be a non-empty string'
+        );
+      });
+
+      test('It should validate key in delete()', async () => {
+        await expect(db.delete('table', '')).rejects.toThrow(
+          'Key must not be empty'
+        );
+      });
+
+      test('It should validate table name in getTableSize()', async () => {
+        await expect(db.getTableSize('')).rejects.toThrow(
+          'Table name must be a non-empty string'
+        );
+      });
+
+      test('It should validate table name in cleanupExpired()', async () => {
+        await expect(db.cleanupExpired('')).rejects.toThrow(
+          'Table name must be a non-empty string'
+        );
+      });
+
+      test('It should validate table name in deleteTable()', async () => {
+        await expect(db.deleteTable('')).rejects.toThrow(
+          'Table name must be a non-empty string'
+        );
+      });
+    });
+  });
+
+  describe('Durable Writes Configuration', () => {
+    test('It should work with durable writes enabled', async () => {
+      const durableDb = new PikoDB({
+        databaseDirectory: testDir,
+        durableWrites: true
+      });
+
+      await durableDb.start();
+
+      const testData = { name: 'Alice', age: 30 };
+      const result = await durableDb.write('users', 'user1', testData);
+      expect(result).toBe(true);
+
+      const retrieved = await durableDb.get('users', 'user1');
+      expect(retrieved).toEqual(testData);
+
+      await durableDb.close();
+    });
+
+    test('It should persist data correctly with durable writes enabled', async () => {
+      const durableDb = new PikoDB({
+        databaseDirectory: testDir,
+        durableWrites: true
+      });
+
+      await durableDb.start();
+
+      // Write multiple records
+      await durableDb.write('durable-test', 'key1', 'value1');
+      await durableDb.write('durable-test', 'key2', 'value2');
+      await durableDb.write('durable-test', 'key3', 'value3');
+
+      await durableDb.close();
+
+      // Create new instance to verify persistence
+      const newDb = new PikoDB({
+        databaseDirectory: testDir,
+        durableWrites: true
+      });
+
+      await newDb.start();
+
+      expect(await newDb.get('durable-test', 'key1')).toBe('value1');
+      expect(await newDb.get('durable-test', 'key2')).toBe('value2');
+      expect(await newDb.get('durable-test', 'key3')).toBe('value3');
+
+      await newDb.close();
+    });
+
+    test('It should work with durable writes disabled (default)', async () => {
+      const noDurableWritesDb = new PikoDB({
+        databaseDirectory: testDir,
+        durableWrites: false
+      });
+
+      await noDurableWritesDb.start();
+
+      const testData = { name: 'Bob', age: 25 };
+      const result = await noDurableWritesDb.write('users', 'user2', testData);
+      expect(result).toBe(true);
+
+      const retrieved = await noDurableWritesDb.get('users', 'user2');
+      expect(retrieved).toEqual(testData);
+
+      await noDurableWritesDb.close();
+    });
+
+    test('It should work with durable writes undefined (default behavior)', async () => {
+      const defaultDb = new PikoDB({
+        databaseDirectory: testDir
+        // durableWrites not specified, should default to false
+      });
+
+      await defaultDb.start();
+
+      const testData = { name: 'Charlie', age: 35 };
+      const result = await defaultDb.write('users', 'user3', testData);
+      expect(result).toBe(true);
+
+      const retrieved = await defaultDb.get('users', 'user3');
+      expect(retrieved).toEqual(testData);
+
+      await defaultDb.close();
+    });
+
+    test('It should handle durable writes with dictionary compression', async () => {
+      const durableWithDictDb = new PikoDB({
+        databaseDirectory: testDir,
+        durableWrites: true,
+        dictionary: {
+          deflate: {
+            sensor: 's',
+            temperature: 't',
+            humidity: 'h'
+          }
+        }
+      });
+
+      await durableWithDictDb.start();
+
+      const sensorData = {
+        sensor: 'DHT22',
+        temperature: 23.5,
+        humidity: 65.2
+      };
+
+      await durableWithDictDb.write('sensors', 'sensor1', sensorData);
+
+      const retrieved = await durableWithDictDb.get('sensors', 'sensor1');
+      expect(retrieved).toEqual(sensorData);
+
+      await durableWithDictDb.close();
+    });
+
+    test('It should handle durable writes with expiration', async () => {
+      const durableDb = new PikoDB({
+        databaseDirectory: testDir,
+        durableWrites: true
+      });
+
+      await durableDb.start();
+
+      const futureExpiration = Date.now() + 60000; // 1 minute from now
+      await durableDb.write(
+        'sessions',
+        'session1',
+        { userId: 'user1' },
+        futureExpiration
+      );
+
+      const retrieved = await durableDb.get('sessions', 'session1');
+      expect(retrieved).toEqual({ userId: 'user1' });
+
+      await durableDb.close();
+    });
+
+    test('It should handle batch writes with durable writes enabled', async () => {
+      const durableDb = new PikoDB({
+        databaseDirectory: testDir,
+        durableWrites: true
+      });
+
+      await durableDb.start();
+
+      // Batch write
+      const writes = [];
+      for (let i = 0; i < 10; i++) {
+        writes.push(durableDb.write('batch-durable', `key${i}`, `value${i}`));
+      }
+
+      await Promise.all(writes);
+
+      // Verify all writes
+      for (let i = 0; i < 10; i++) {
+        const value = await durableDb.get('batch-durable', `key${i}`);
+        expect(value).toBe(`value${i}`);
+      }
+
+      await durableDb.close();
     });
   });
 });

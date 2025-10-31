@@ -15,7 +15,8 @@ lib/
 docs/
 dist/
 .aws-sam/
-package-lock.json
+package-lock.js
+.claude/
 
 # Files generated from tests
 coverage/
