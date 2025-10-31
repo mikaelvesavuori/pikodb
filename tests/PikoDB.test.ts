@@ -1279,13 +1279,15 @@ describe('PikoDB', () => {
     test('It should compress and decompress data with deflate mapping', async () => {
       const compressedDb = new PikoDB({
         databaseDirectory: testDir,
-        dictionary: {
-          deflate: {
-            sensor: 's',
-            identity: 'i',
-            temperature: 't',
-            timestamp: 'ts',
-            metadata: 'm'
+        dictionaries: {
+          testDict: {
+            deflate: {
+              sensor: 's',
+              identity: 'i',
+              temperature: 't',
+              timestamp: 'ts',
+              metadata: 'm'
+            }
           }
         }
       });
@@ -1314,13 +1316,15 @@ describe('PikoDB', () => {
     test('It should compress and decompress data with inflate mapping', async () => {
       const compressedDb = new PikoDB({
         databaseDirectory: testDir,
-        dictionary: {
-          inflate: {
-            s: 'sensor',
-            i: 'identity',
-            t: 'temperature',
-            ts: 'timestamp',
-            m: 'metadata'
+        dictionaries: {
+          testDict: {
+            inflate: {
+              s: 'sensor',
+              i: 'identity',
+              t: 'temperature',
+              ts: 'timestamp',
+              m: 'metadata'
+            }
           }
         }
       });
@@ -1344,12 +1348,14 @@ describe('PikoDB', () => {
     test('It should compress metadata fields (version, timestamp, expiration)', async () => {
       const compressedDb = new PikoDB({
         databaseDirectory: testDir,
-        dictionary: {
-          deflate: {
-            value: 'v',
-            version: 'ver',
-            timestamp: 'ts',
-            expiration: 'exp'
+        dictionaries: {
+          testDict: {
+            deflate: {
+              value: 'v',
+              version: 'ver',
+              timestamp: 'ts',
+              expiration: 'exp'
+            }
           }
         }
       });
@@ -1416,25 +1422,33 @@ describe('PikoDB', () => {
           testDir,
           `compressed-${Math.random().toString(36).substring(7)}`
         ),
-        dictionary: {
-          deflate: {
-            sensor: 's',
-            identity: 'i',
-            temperature: 't',
-            humidity: 'h',
-            pressure: 'p',
-            timestamp: 'ts',
-            metadata: 'm',
-            location: 'l',
-            deviceType: 'd',
-            calibrationDate: 'c',
-            version: 'v',
-            expiration: 'e'
+        dictionaries: {
+          testDict: {
+            deflate: {
+              sensor: 's',
+              identity: 'i',
+              temperature: 't',
+              humidity: 'h',
+              pressure: 'p',
+              timestamp: 'ts',
+              metadata: 'm',
+              location: 'l',
+              deviceType: 'd',
+              calibrationDate: 'c',
+              version: 'v',
+              expiration: 'e'
+            }
           }
         }
       });
       await compressedDb.start();
-      await compressedDb.write('metrics', 'reading1', testData);
+      await compressedDb.write(
+        'metrics',
+        'reading1',
+        testData,
+        undefined,
+        'testDict'
+      );
       await compressedDb.close();
 
       // @ts-expect-error
@@ -1449,15 +1463,17 @@ describe('PikoDB', () => {
     test('It should handle nested objects with compression', async () => {
       const compressedDb = new PikoDB({
         databaseDirectory: testDir,
-        dictionary: {
-          deflate: {
-            user: 'u',
-            profile: 'p',
-            settings: 's',
-            notifications: 'n',
-            email: 'e',
-            push: 'pu',
-            theme: 't'
+        dictionaries: {
+          testDict: {
+            deflate: {
+              user: 'u',
+              profile: 'p',
+              settings: 's',
+              notifications: 'n',
+              email: 'e',
+              push: 'pu',
+              theme: 't'
+            }
           }
         }
       });
@@ -1489,12 +1505,14 @@ describe('PikoDB', () => {
     test('It should handle arrays with compression', async () => {
       const compressedDb = new PikoDB({
         databaseDirectory: testDir,
-        dictionary: {
-          deflate: {
-            sensor: 's',
-            readings: 'r',
-            temperature: 't',
-            timestamp: 'ts'
+        dictionaries: {
+          testDict: {
+            deflate: {
+              sensor: 's',
+              readings: 'r',
+              temperature: 't',
+              timestamp: 'ts'
+            }
           }
         }
       });
@@ -1519,18 +1537,20 @@ describe('PikoDB', () => {
     });
 
     test('It should persist compressed data across restarts', async () => {
-      const dictionary = {
-        deflate: {
-          sensor: 's',
-          identity: 'i',
-          temperature: 't'
+      const dictionaries = {
+        testDict: {
+          deflate: {
+            sensor: 's',
+            identity: 'i',
+            temperature: 't'
+          }
         }
       };
 
       // First session with compression
       const db1 = new PikoDB({
         databaseDirectory: testDir,
-        dictionary
+        dictionaries
       });
       await db1.start();
 
@@ -1546,7 +1566,7 @@ describe('PikoDB', () => {
       // Second session with same compression
       const db2 = new PikoDB({
         databaseDirectory: testDir,
-        dictionary
+        dictionaries
       });
       await db2.start();
 
@@ -1559,10 +1579,12 @@ describe('PikoDB', () => {
     test('It should handle keys not in dictionary gracefully', async () => {
       const compressedDb = new PikoDB({
         databaseDirectory: testDir,
-        dictionary: {
-          deflate: {
-            sensor: 's',
-            temperature: 't'
+        dictionaries: {
+          testDict: {
+            deflate: {
+              sensor: 's',
+              temperature: 't'
+            }
           }
         }
       });
@@ -1588,11 +1610,13 @@ describe('PikoDB', () => {
     test('It should handle null and undefined values with compression', async () => {
       const compressedDb = new PikoDB({
         databaseDirectory: testDir,
-        dictionary: {
-          deflate: {
-            nullField: 'n',
-            undefinedField: 'u',
-            normalField: 'nf'
+        dictionaries: {
+          testDict: {
+            deflate: {
+              nullField: 'n',
+              undefinedField: 'u',
+              normalField: 'nf'
+            }
           }
         }
       });
@@ -1616,10 +1640,12 @@ describe('PikoDB', () => {
     test('It should handle primitive values with compression', async () => {
       const compressedDb = new PikoDB({
         databaseDirectory: testDir,
-        dictionary: {
-          deflate: {
-            sensor: 's',
-            value: 'v'
+        dictionaries: {
+          testDict: {
+            deflate: {
+              sensor: 's',
+              value: 'v'
+            }
           }
         }
       });
@@ -1641,11 +1667,13 @@ describe('PikoDB', () => {
     test('It should handle concurrent writes with compression', async () => {
       const compressedDb = new PikoDB({
         databaseDirectory: testDir,
-        dictionary: {
-          deflate: {
-            sensor: 's',
-            reading: 'r',
-            timestamp: 'ts'
+        dictionaries: {
+          testDict: {
+            deflate: {
+              sensor: 's',
+              reading: 'r',
+              timestamp: 'ts'
+            }
           }
         }
       });
@@ -1680,7 +1708,9 @@ describe('PikoDB', () => {
       expect(() => {
         new PikoDB({
           databaseDirectory: testDir,
-          dictionary: {}
+          dictionaries: {
+            myDict: {}
+          }
         });
       }).toThrow('Dictionary must provide either deflate or inflate mapping');
     });
@@ -1689,9 +1719,11 @@ describe('PikoDB', () => {
       expect(() => {
         new PikoDB({
           databaseDirectory: testDir,
-          dictionary: {
-            deflate: { sensor: 's' },
-            inflate: { s: 'sensor' }
+          dictionaries: {
+            myDict: {
+              deflate: { sensor: 's' },
+              inflate: { s: 'sensor' }
+            }
           }
         });
       }).toThrow(
@@ -1702,13 +1734,15 @@ describe('PikoDB', () => {
     test('It should handle expiration cleanup with compressed data', async () => {
       const compressedDb = new PikoDB({
         databaseDirectory: testDir,
-        dictionary: {
-          deflate: {
-            sensor: 's',
-            value: 'v',
-            timestamp: 'ts',
-            version: 'ver',
-            expiration: 'exp'
+        dictionaries: {
+          testDict: {
+            deflate: {
+              sensor: 's',
+              value: 'v',
+              timestamp: 'ts',
+              version: 'ver',
+              expiration: 'exp'
+            }
           }
         }
       });
@@ -2009,6 +2043,328 @@ describe('PikoDB', () => {
     });
   });
 
+  describe('Multiple Dictionaries', () => {
+    test('It should support multiple named dictionaries', async () => {
+      const db = new PikoDB({
+        databaseDirectory: testDir,
+        dictionaries: {
+          sensors: {
+            deflate: { sensor: 's', temperature: 't', humidity: 'h' }
+          },
+          users: {
+            deflate: { username: 'u', email: 'e', created: 'c' }
+          }
+        }
+      });
+
+      await db.start();
+
+      // Write with sensors dictionary
+      await db.write(
+        'readings',
+        'r1',
+        { sensor: 'DHT22', temperature: 23.5, humidity: 65.2 },
+        undefined,
+        'sensors'
+      );
+
+      // Write with users dictionary
+      await db.write(
+        'users',
+        'user1',
+        { username: 'alice', email: 'alice@example.com', created: Date.now() },
+        undefined,
+        'users'
+      );
+
+      // Retrieve and verify
+      const reading = await db.get('readings', 'r1');
+      expect(reading).toEqual({
+        sensor: 'DHT22',
+        temperature: 23.5,
+        humidity: 65.2
+      });
+
+      const user = await db.get('users', 'user1');
+      expect(user.username).toBe('alice');
+      expect(user.email).toBe('alice@example.com');
+
+      await db.close();
+    });
+
+    test('It should write without dictionary when none specified', async () => {
+      const db = new PikoDB({
+        databaseDirectory: testDir,
+        dictionaries: {
+          myDict: {
+            deflate: { sensor: 's', temperature: 't' }
+          }
+        }
+      });
+
+      await db.start();
+
+      // Write without specifying dictionary
+      await db.write('data', 'key1', { sensor: 'DHT22', temperature: 23.5 });
+
+      // Write with dictionary
+      await db.write(
+        'data',
+        'key2',
+        { sensor: 'DHT22', temperature: 23.5 },
+        undefined,
+        'myDict'
+      );
+
+      const val1 = await db.get('data', 'key1');
+      const val2 = await db.get('data', 'key2');
+
+      expect(val1).toEqual({ sensor: 'DHT22', temperature: 23.5 });
+      expect(val2).toEqual({ sensor: 'DHT22', temperature: 23.5 });
+
+      await db.close();
+    });
+
+    test('It should throw error when using non-existent dictionary', async () => {
+      const db = new PikoDB({
+        databaseDirectory: testDir,
+        dictionaries: {
+          myDict: {
+            deflate: { sensor: 's' }
+          }
+        }
+      });
+
+      await db.start();
+
+      await expect(
+        db.write('data', 'key1', { sensor: 'DHT22' }, undefined, 'nonExistent')
+      ).rejects.toThrow('Dictionary "nonExistent" not found');
+
+      await db.close();
+    });
+
+    test('It should add dictionary dynamically', async () => {
+      const db = new PikoDB({
+        databaseDirectory: testDir
+      });
+
+      await db.start();
+
+      // Initially no dictionaries
+      expect(db.listDictionaries()).toEqual([]);
+
+      // Add a dictionary
+      db.addDictionary('sensors', {
+        deflate: { sensor: 's', temperature: 't' }
+      });
+
+      expect(db.listDictionaries()).toEqual(['sensors']);
+
+      // Use the new dictionary
+      await db.write(
+        'readings',
+        'r1',
+        { sensor: 'DHT22', temperature: 23.5 },
+        undefined,
+        'sensors'
+      );
+
+      const reading = await db.get('readings', 'r1');
+      expect(reading).toEqual({ sensor: 'DHT22', temperature: 23.5 });
+
+      await db.close();
+    });
+
+    test('It should remove dictionary', async () => {
+      const db = new PikoDB({
+        databaseDirectory: testDir,
+        dictionaries: {
+          dict1: { deflate: { a: 'x' } },
+          dict2: { deflate: { b: 'y' } }
+        }
+      });
+
+      await db.start();
+
+      expect(db.listDictionaries()).toContain('dict1');
+      expect(db.listDictionaries()).toContain('dict2');
+
+      db.removeDictionary('dict1');
+
+      expect(db.listDictionaries()).not.toContain('dict1');
+      expect(db.listDictionaries()).toContain('dict2');
+
+      await db.close();
+    });
+
+    test('It should throw error when adding duplicate dictionary', async () => {
+      const db = new PikoDB({
+        databaseDirectory: testDir,
+        dictionaries: {
+          myDict: { deflate: { a: 'x' } }
+        }
+      });
+
+      await db.start();
+
+      expect(() => {
+        db.addDictionary('myDict', { deflate: { b: 'y' } });
+      }).toThrow('Dictionary "myDict" already exists');
+
+      await db.close();
+    });
+
+    test('It should persist dictionary metadata across restarts', async () => {
+      const db1 = new PikoDB({
+        databaseDirectory: testDir,
+        dictionaries: {
+          sensors: { deflate: { sensor: 's', temperature: 't' } }
+        }
+      });
+
+      await db1.start();
+
+      await db1.write(
+        'readings',
+        'r1',
+        { sensor: 'DHT22', temperature: 23.5 },
+        undefined,
+        'sensors'
+      );
+      await db1.close();
+
+      // Restart with same dictionaries
+      const db2 = new PikoDB({
+        databaseDirectory: testDir,
+        dictionaries: {
+          sensors: { deflate: { sensor: 's', temperature: 't' } }
+        }
+      });
+
+      await db2.start();
+
+      const reading = await db2.get('readings', 'r1');
+      expect(reading).toEqual({ sensor: 'DHT22', temperature: 23.5 });
+
+      await db2.close();
+    });
+
+    test('It should handle mixed dictionary and non-dictionary writes in same table', async () => {
+      const db = new PikoDB({
+        databaseDirectory: testDir,
+        dictionaries: {
+          myDict: { deflate: { sensor: 's', temperature: 't' } }
+        }
+      });
+
+      await db.start();
+
+      // Write without dictionary
+      await db.write('mixed', 'key1', { sensor: 'A', temperature: 10 });
+
+      // Write with dictionary
+      await db.write(
+        'mixed',
+        'key2',
+        { sensor: 'B', temperature: 20 },
+        undefined,
+        'myDict'
+      );
+
+      // Write without dictionary again
+      await db.write('mixed', 'key3', { sensor: 'C', temperature: 30 });
+
+      const val1 = await db.get('mixed', 'key1');
+      const val2 = await db.get('mixed', 'key2');
+      const val3 = await db.get('mixed', 'key3');
+
+      expect(val1).toEqual({ sensor: 'A', temperature: 10 });
+      expect(val2).toEqual({ sensor: 'B', temperature: 20 });
+      expect(val3).toEqual({ sensor: 'C', temperature: 30 });
+
+      await db.close();
+    });
+
+    test('It should list all dictionaries', async () => {
+      const db = new PikoDB({
+        databaseDirectory: testDir,
+        dictionaries: {
+          dict1: { deflate: { a: 'x' } },
+          dict2: { deflate: { b: 'y' } },
+          dict3: { deflate: { c: 'z' } }
+        }
+      });
+
+      await db.start();
+
+      const dicts = db.listDictionaries();
+      expect(dicts).toHaveLength(3);
+      expect(dicts).toContain('dict1');
+      expect(dicts).toContain('dict2');
+      expect(dicts).toContain('dict3');
+
+      await db.close();
+    });
+
+    test('It should handle concurrent writes with different dictionaries', async () => {
+      const db = new PikoDB({
+        databaseDirectory: testDir,
+        dictionaries: {
+          dict1: { deflate: { sensor: 's', value: 'v' } },
+          dict2: { deflate: { username: 'u', email: 'e' } }
+        }
+      });
+
+      await db.start();
+
+      const promises = [
+        db.write(
+          'data',
+          'key1',
+          { sensor: 'A', value: 10 },
+          undefined,
+          'dict1'
+        ),
+        db.write(
+          'data',
+          'key2',
+          { username: 'alice', email: 'alice@test.com' },
+          undefined,
+          'dict2'
+        ),
+        db.write(
+          'data',
+          'key3',
+          { sensor: 'B', value: 20 },
+          undefined,
+          'dict1'
+        ),
+        db.write(
+          'data',
+          'key4',
+          { username: 'bob', email: 'bob@test.com' },
+          undefined,
+          'dict2'
+        )
+      ];
+
+      await Promise.all(promises);
+
+      const val1 = await db.get('data', 'key1');
+      const val2 = await db.get('data', 'key2');
+      const val3 = await db.get('data', 'key3');
+      const val4 = await db.get('data', 'key4');
+
+      expect(val1).toEqual({ sensor: 'A', value: 10 });
+      expect(val2).toEqual({ username: 'alice', email: 'alice@test.com' });
+      expect(val3).toEqual({ sensor: 'B', value: 20 });
+      expect(val4).toEqual({ username: 'bob', email: 'bob@test.com' });
+
+      await db.close();
+    });
+  });
+
   describe('Durable Writes Configuration', () => {
     test('It should work with durable writes enabled', async () => {
       const durableDb = new PikoDB({
@@ -2098,11 +2454,13 @@ describe('PikoDB', () => {
       const durableWithDictDb = new PikoDB({
         databaseDirectory: testDir,
         durableWrites: true,
-        dictionary: {
-          deflate: {
-            sensor: 's',
-            temperature: 't',
-            humidity: 'h'
+        dictionaries: {
+          testDict: {
+            deflate: {
+              sensor: 's',
+              temperature: 't',
+              humidity: 'h'
+            }
           }
         }
       });

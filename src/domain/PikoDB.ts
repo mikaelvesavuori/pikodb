@@ -7,12 +7,15 @@ import {
 } from 'node:fs';
 import { readFile, writeFile, rename, unlink, open } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
+
 import {
   type ProcessedDictionary,
+  type Dictionary,
   processDictionary,
   transformValue
 } from '../interfaces/Dictionary';
 import type { DatabaseOptions, DatabaseRecord } from '../interfaces';
+
 import {
   validateKey,
   validateTableName,
@@ -24,11 +27,11 @@ import {
  *
  * Features:
  * - Immediate disk persistence with atomic writes
- * - No WAL complexity or checkpoint issues
  * - Simple memory + disk architecture
  * - Full data type support
  * - Concurrent operation safety
- * - Optional dictionary compression for storage optimization
+ * - Multiple named dictionaries for flexible compression
+ * - Dynamic dictionary management (add/remove at runtime)
  *
  * @example
  * // Basic usage
@@ -39,35 +42,62 @@ import {
  * await db.close();
  *
  * @example
- * // With dictionary compression
+ * // With multiple named dictionaries
  * const db = new PikoDB({
  *   databaseDirectory: './data',
- *   dictionary: {
- *     deflate: {
- *       sensor: 's',
- *       temperature: 't',
- *       humidity: 'h'
+ *   dictionaries: {
+ *     sensors: {
+ *       deflate: {
+ *         sensor: 's',
+ *         temperature: 't',
+ *         humidity: 'h'
+ *       }
+ *     },
+ *     users: {
+ *       deflate: {
+ *         username: 'u',
+ *         email: 'e',
+ *         created: 'c'
+ *       }
  *     }
  *   }
  * });
  * await db.start();
- * // Data is compressed on disk but you work with original keys
- * await db.write('readings', 'r1', { sensor: 'DHT22', temperature: 23.5 });
+ *
+ * // Use different dictionaries for different data
+ * await db.write('readings', 'r1', { sensor: 'DHT22', temperature: 23.5 }, undefined, 'sensors');
+ * await db.write('users', 'user1', { username: 'alice', email: 'alice@example.com' }, undefined, 'users');
+ *
  * const reading = await db.get('readings', 'r1'); // { sensor: 'DHT22', temperature: 23.5 }
+ * await db.close();
+ *
+ * @example
+ * // Add dictionaries dynamically
+ * const db = new PikoDB({ databaseDirectory: './data' });
+ * await db.start();
+ *
+ * db.addDictionary('metrics', {
+ *   deflate: { timestamp: 'ts', value: 'v', unit: 'u' }
+ * });
+ *
+ * await db.write('metrics', 'm1', { timestamp: Date.now(), value: 42, unit: 'celsius' }, undefined, 'metrics');
  * await db.close();
  */
 export class PikoDB {
   private readonly data: Map<string, Map<string, DatabaseRecord>> = new Map();
   private readonly databaseDirectory: string;
-  private readonly dictionary?: ProcessedDictionary;
+  private readonly dictionaries: Map<string, ProcessedDictionary> = new Map();
   private readonly useFsync: boolean;
 
   constructor(options: DatabaseOptions) {
     this.databaseDirectory = options.databaseDirectory;
     this.useFsync = options.durableWrites ?? false;
 
-    if (options.dictionary) {
-      this.dictionary = processDictionary(options.dictionary);
+    if (options.dictionaries) {
+      Object.entries(options.dictionaries).forEach(([name, dict]) => {
+        const processed = processDictionary(dict);
+        this.dictionaries.set(name, processed);
+      });
     }
 
     if (!existsSync(this.databaseDirectory))
@@ -103,6 +133,7 @@ export class PikoDB {
    * @param key - The key to store the value under
    * @param value - The value to store (any JSON-serializable data)
    * @param expirationTimestamp - Optional expiration timestamp in milliseconds
+   * @param dictionaryName - Optional dictionary name to use for compression
    * @returns True if write succeeded, false otherwise
    *
    * @example
@@ -113,6 +144,13 @@ export class PikoDB {
    * // Write with expiration (1 hour from now)
    * const oneHour = Date.now() + (60 * 60 * 1000);
    * await db.write('sessions', 'session123', { userId: 'user1' }, oneHour);
+   *
+   * @example
+   * // Write with specific dictionary
+   * await db.write('sensors', 'sensor1', {
+   *   sensor: 'DHT22',
+   *   temperature: 23.5
+   * }, undefined, 'sensorDict');
    *
    * @example
    * // Write nested objects (compression applies recursively if dictionary configured)
@@ -128,12 +166,20 @@ export class PikoDB {
     tableName: string,
     key: string,
     value: any,
-    expirationTimestamp?: number
+    expirationTimestamp?: number,
+    dictionaryName?: string
   ): Promise<boolean> {
     // Validate inputs (throws on error)
     validateTableName(tableName);
     validateKey(key);
     validateValue(value);
+
+    // Validate dictionary name if provided
+    if (dictionaryName && !this.dictionaries.has(dictionaryName)) {
+      throw new Error(
+        `Dictionary "${dictionaryName}" not found. Available dictionaries: ${Array.from(this.dictionaries.keys()).join(', ') || 'none'}`
+      );
+    }
 
     try {
       // Ensure table exists in memory
@@ -148,7 +194,8 @@ export class PikoDB {
         value,
         version: newVersion,
         timestamp: Date.now(),
-        expiration: expirationTimestamp || null
+        expiration: expirationTimestamp || null,
+        dictionaryName: dictionaryName || undefined
       };
 
       table.set(key, record);
@@ -470,6 +517,67 @@ export class PikoDB {
   }
 
   /**
+   * @description Add a new dictionary for compression after database instantiation.
+   *
+   * @param name - The name to identify this dictionary
+   * @param dictionary - The dictionary configuration (provide either deflate or inflate)
+   * @throws If a dictionary with the same name already exists
+   * @throws If dictionary is invalid (neither deflate nor inflate, or both provided)
+   *
+   * @example
+   * const db = new PikoDB({ databaseDirectory: './data' });
+   * await db.start();
+   *
+   * // Add a dictionary for sensor data
+   * db.addDictionary('sensors', {
+   *   deflate: {
+   *     sensor: 's',
+   *     temperature: 't',
+   *     humidity: 'h'
+   *   }
+   * });
+   *
+   * // Use the dictionary when writing
+   * await db.write('readings', 'r1', { sensor: 'DHT22', temperature: 23.5 }, undefined, 'sensors');
+   */
+  addDictionary(name: string, dictionary: Dictionary): void {
+    if (this.dictionaries.has(name)) {
+      throw new Error(
+        `Dictionary "${name}" already exists. Use a different name or remove the existing dictionary first.`
+      );
+    }
+
+    const processed = processDictionary(dictionary);
+    this.dictionaries.set(name, processed);
+  }
+
+  /**
+   * @description Remove a dictionary by name.
+   *
+   * @param name - The name of the dictionary to remove
+   * @returns True if dictionary was removed, false if it didn't exist
+   *
+   * @example
+   * db.removeDictionary('sensors');
+   */
+  removeDictionary(name: string): boolean {
+    return this.dictionaries.delete(name);
+  }
+
+  /**
+   * @description List all available dictionary names.
+   *
+   * @returns Array of dictionary names
+   *
+   * @example
+   * const dictionaries = db.listDictionaries();
+   * console.log(dictionaries); // ['sensors', 'users', 'metrics']
+   */
+  listDictionaries(): string[] {
+    return Array.from(this.dictionaries.keys());
+  }
+
+  /**
    * @description Load a table from disk into memory.
    */
   private async loadTable(tableName: string): Promise<void> {
@@ -547,22 +655,30 @@ export class PikoDB {
 
   /**
    * @description Serialize table data to buffer for disk storage.
-   * Uses short keys for metadata (d, v, t, x). Optionally compresses user data if dictionary provided.
+   * Uses short keys for metadata (d, v, t, x, n). Optionally compresses user data if dictionary provided.
    */
   private serializeTable(table: Map<string, DatabaseRecord>): Buffer {
     const data = Array.from(table.entries()).map(([key, record]) => {
-      // Directly create compressed record with short keys (no transformation overhead)
-      return [
-        key,
-        {
-          d: this.dictionary
-            ? transformValue(record.value, this.dictionary.deflate)
-            : record.value,
-          v: record.version,
-          t: record.timestamp,
-          x: record.expiration
-        }
-      ];
+      const dictionary = record.dictionaryName
+        ? this.dictionaries.get(record.dictionaryName)
+        : undefined;
+
+      // Directly create compressed record with short keys
+      const compressed: any = {
+        d: dictionary
+          ? transformValue(record.value, dictionary.deflate)
+          : record.value,
+        v: record.version,
+        t: record.timestamp,
+        x: record.expiration
+      };
+
+      // Only include dictionary name if it exists
+      if (record.dictionaryName) {
+        compressed.n = record.dictionaryName;
+      }
+
+      return [key, compressed];
     });
 
     return Buffer.from(JSON.stringify(data), 'utf8');
@@ -570,22 +686,28 @@ export class PikoDB {
 
   /**
    * @description Deserialize buffer data back to table map.
-   * Directly maps short keys (d, v, t, x) to full property names. Optionally decompresses user data if dictionary provided.
+   * Directly maps short keys (d, v, t, x, n) to full property names. Optionally decompresses user data if dictionary provided.
    */
   private deserializeTable(buffer: Buffer): Map<string, DatabaseRecord> {
     const data = JSON.parse(buffer.toString('utf8'));
 
-    // Directly map short keys to DatabaseRecord structure (no transformation overhead)
+    // Directly map short keys to DatabaseRecord structure
     const records = data.map(([key, compressed]: [string, any]) => {
+      const dictionaryName = compressed.n;
+      const dictionary = dictionaryName
+        ? this.dictionaries.get(dictionaryName)
+        : undefined;
+
       return [
         key,
         {
-          value: this.dictionary
-            ? transformValue(compressed.d, this.dictionary.inflate)
+          value: dictionary
+            ? transformValue(compressed.d, dictionary.inflate)
             : compressed.d,
           version: compressed.v,
           timestamp: compressed.t,
-          expiration: compressed.x
+          expiration: compressed.x,
+          dictionaryName: dictionaryName || undefined
         }
       ];
     });

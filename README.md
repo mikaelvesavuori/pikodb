@@ -6,16 +6,17 @@
 
 ---
 
+- **Ultra-minimal footprint** at only ~2.2KB gzipped
 - **Immediate disk persistence** with atomic writes - no data loss
 - **Zero configuration** - works out of the box
-- **Optional dictionary compression** - reduce storage by 10-25%
+- **Multiple named dictionaries** - flexible compression for different data types
+- **Dynamic dictionary management** - add/remove dictionaries at runtime
 - **Full data type support** - store any JSON-serializable data
 - **Item versioning** - automatic version tracking
 - **Item expiration** - automatic cleanup of expired records
 - **Concurrent operation safety** - handles parallel reads/writes
-- **No WAL complexity** - eliminates buffer races and checkpoint issues
 - **Simple architecture** - memory + disk, that's it
-- **High test coverage** - 85+ tests ensuring reliability
+- **High test coverage** - 130+ tests ensuring reliability
 - **Zero dependencies** - pure Node.js implementation
 
 ## Installation
@@ -105,7 +106,7 @@ This means:
 PikoDB is optimized for:
 
 - **Small to medium datasets** per table (up to 100k records)
-- **Read-heavy workloads** (dictionary compression actually speeds up reads!)
+- **Read-heavy workloads** (dictionary compression speeds up reads)
 - **Multi-tenant applications** with many small tables
 - **Serverless environments** where simplicity and reliability matter
 - **Development and testing** where zero configuration is valuable
@@ -121,8 +122,9 @@ Performance considerations:
 
 PikoDB includes optional dictionary-based compression to reduce storage size. This feature:
 
-- **Always compresses metadata** (value, version, timestamp, expiration) - saves ~22 bytes per record
+- **Always compresses metadata** (value, version, timestamp, expiration, dictionaryName) - saves ~22 bytes per record
 - **Optionally compresses user data** if you provide a dictionary
+- **Supports multiple named dictionaries** for different data types
 - **Works recursively** on nested objects and arrays
 - **Transparent** - you always read/write with original keys
 - **Auto-generates inverse mapping** - provide deflate OR inflate, not both
@@ -132,7 +134,7 @@ PikoDB includes optional dictionary-based compression to reduce storage size. Th
 ```typescript
 const db = new PikoDB({
   databaseDirectory: './data'
-  // No dictionary - metadata still compressed automatically!
+  // No dictionaries - metadata still compressed automatically!
 });
 ```
 
@@ -140,54 +142,101 @@ On disk:
 
 ```json
 {
-  "v": { "sensor": "DHT22", "temperature": 23.5 },
-  "ver": 1,
-  "ts": 1761895610965,
-  "exp": null
+  "d": { "sensor": "DHT22", "temperature": 23.5 },
+  "v": 1,
+  "t": 1761895610965,
+  "x": null
 }
 ```
 
-### With Compression
+### With Multiple Dictionaries
 
 ```typescript
 const db = new PikoDB({
   databaseDirectory: './data',
-  dictionary: {
-    deflate: {
-      sensor: 's',
-      temperature: 't',
-      humidity: 'h',
-      timestamp: 'ts',
-      location: 'l'
+  dictionaries: {
+    sensors: {
+      deflate: {
+        sensor: 's',
+        temperature: 't',
+        humidity: 'h',
+        timestamp: 'ts',
+        location: 'l'
+      }
+    },
+    users: {
+      deflate: {
+        username: 'u',
+        email: 'e',
+        created: 'c'
+      }
     }
   }
 });
 
 await db.start();
 
-// Write with original keys (transparent!)
+// Write sensor data with 'sensors' dictionary
 await db.write('readings', 'r1', {
   sensor: 'DHT22',
   temperature: 23.5,
   humidity: 65.2,
   timestamp: Date.now(),
   location: 'warehouse-A'
-});
+}, undefined, 'sensors');  // <- specify dictionary name
+
+// Write user data with 'users' dictionary
+await db.write('users', 'user1', {
+  username: 'alice',
+  email: 'alice@example.com',
+  created: Date.now()
+}, undefined, 'users');  // <- different dictionary
 
 // Read with original keys (transparent!)
 const reading = await db.get('readings', 'r1');
 // { sensor: 'DHT22', temperature: 23.5, humidity: 65.2, ... }
+
+const user = await db.get('users', 'user1');
+// { username: 'alice', email: 'alice@example.com', created: ... }
 ```
 
 On disk (compressed):
 
 ```json
 {
-  "v": { "s": "DHT22", "t": 23.5, "h": 65.2, "ts": 1761895610965, "l": "warehouse-A" },
-  "ver": 1,
-  "ts": 1761895610965,
-  "exp": null
+  "d": { "s": "DHT22", "t": 23.5, "h": 65.2, "ts": 1761895610965, "l": "warehouse-A" },
+  "v": 1,
+  "t": 1761895610965,
+  "x": null,
+  "n": "sensors"
 }
+```
+
+### Dynamic Dictionary Management
+
+You can add and remove dictionaries at runtime:
+
+```typescript
+const db = new PikoDB({ databaseDirectory: './data' });
+await db.start();
+
+// Add a dictionary dynamically
+db.addDictionary('metrics', {
+  deflate: { timestamp: 'ts', value: 'v', unit: 'u' }
+});
+
+// Use the new dictionary
+await db.write('metrics', 'm1',
+  { timestamp: Date.now(), value: 42, unit: 'celsius' },
+  undefined,
+  'metrics'
+);
+
+// List all dictionaries
+console.log(db.listDictionaries()); // ['metrics']
+
+// Remove a dictionary
+db.removeDictionary('metrics');
 ```
 
 ### Compression Savings
@@ -264,12 +313,14 @@ const db = new PikoDB({ databaseDirectory: './data' });
 ```
 
 **Safety guarantees:**
+
 - ✅ **No corruption** - atomic rename ensures consistency
 - ✅ **Crash safe** - process/VM crashes won't corrupt data
 - ✅ **Fast writes** - no durability overhead
 - ⚠️ **Power loss window** - last 5-30 seconds of writes may be lost on power failure
 
 **When to use:**
+
 - ✅ Development and testing
 - ✅ Batch jobs and VM workloads (jobs can retry)
 - ✅ Caches and non-critical data
@@ -287,18 +338,21 @@ const db = new PikoDB({
 ```
 
 **How it works:**
+
 1. Writes data to temp file
 2. Forces data to physical disk (fsync)
 3. Atomically renames temp file to final file
 4. Forces directory entry to disk (when supported)
 
 **Safety guarantees:**
+
 - ✅ **Maximum durability** - survives power loss
 - ✅ **Zero data loss** - every completed write is on disk
 - ✅ **No corruption** - atomic rename still ensures consistency
 - ❌ **Slower writes** - 10-100x slower depending on storage
 
 **When to use:**
+
 - ✅ Financial transactions
 - ✅ Critical audit logs
 - ✅ Medical records
@@ -318,15 +372,18 @@ const db = new PikoDB({
 ### Crash Scenarios
 
 **Process crash (kill -9, exception):**
+
 - Both modes: ✅ No corruption, completed writes safe
 - Data loss: Only in-flight writes (microseconds)
 
 **VM shutdown (docker stop, orchestrator kill):**
+
 - Both modes: ✅ No corruption
 - Default mode: ⚠️ Last 5-30 seconds may be lost (OS dependent)
 - Durable writes: ✅ All writes safe
 
 **Power loss / kernel panic:**
+
 - Both modes: ✅ No corruption
 - Default mode: ⚠️ Last 5-30 seconds may be lost
 - Durable writes: ✅ All writes safe (filesystem dependent)
@@ -344,7 +401,7 @@ new PikoDB(options: DatabaseOptions)
 **Options:**
 
 - `databaseDirectory`: Path to database directory (required)
-- `dictionary`: Optional dictionary for compression (optional)
+- `dictionaries`: Optional object containing named dictionaries for compression (optional)
 - `durableWrites`: Enable durable writes for maximum durability (optional, default: false)
 
 **Examples:**
@@ -355,11 +412,12 @@ const db = new PikoDB({
   databaseDirectory: './data'
 });
 
-// With dictionary compression
+// With multiple named dictionaries
 const db = new PikoDB({
   databaseDirectory: './data',
-  dictionary: {
-    deflate: { sensor: 's', temperature: 't' }
+  dictionaries: {
+    sensors: { deflate: { sensor: 's', temperature: 't' } },
+    users: { deflate: { username: 'u', email: 'e' } }
   }
 });
 
@@ -372,8 +430,8 @@ const db = new PikoDB({
 // All options combined
 const db = new PikoDB({
   databaseDirectory: './data',
-  dictionary: {
-    deflate: { sensor: 's', temperature: 't' }
+  dictionaries: {
+    metrics: { deflate: { sensor: 's', temperature: 't' } }
   },
   durableWrites: true
 });
@@ -402,7 +460,8 @@ await db.write(
   tableName: string,
   key: string,
   value: any,
-  expirationTimestamp?: number
+  expirationTimestamp?: number,
+  dictionaryName?: string
 ): Promise<boolean>
 ```
 
@@ -412,6 +471,7 @@ await db.write(
 - `key`: The key to store the value under
 - `value`: The value to store (any JSON-serializable data)
 - `expirationTimestamp`: Optional expiration timestamp in milliseconds
+- `dictionaryName`: Optional dictionary name to use for compression
 
 **Returns:** `true` if write succeeded, `false` otherwise
 
@@ -425,6 +485,12 @@ await db.write('users', 'user1', { name: 'Alice', age: 30 });
 const oneHour = Date.now() + (60 * 60 * 1000);
 await db.write('sessions', 'session123', { userId: 'user1' }, oneHour);
 
+// Write with specific dictionary
+await db.write('sensors', 'sensor1', {
+  sensor: 'DHT22',
+  temperature: 23.5
+}, undefined, 'sensorDict');
+
 // Write nested objects (compression applies recursively if dictionary configured)
 await db.write('sensors', 'sensor1', {
   sensor: 'DHT22',
@@ -432,7 +498,7 @@ await db.write('sensors', 'sensor1', {
     location: 'warehouse',
     building: 'A'
   }
-});
+}, undefined, 'sensorDict');
 ```
 
 ### get()
@@ -628,6 +694,77 @@ await db.start();
 await db.close(); // Always close when done
 ```
 
+### addDictionary()
+
+Add a new dictionary for compression after database instantiation.
+
+```typescript
+db.addDictionary(name: string, dictionary: Dictionary): void
+```
+
+**Parameters:**
+
+- `name`: The name to identify this dictionary
+- `dictionary`: The dictionary configuration (provide either deflate or inflate)
+
+**Throws:** If a dictionary with the same name already exists
+
+**Example:**
+
+```typescript
+const db = new PikoDB({ databaseDirectory: './data' });
+await db.start();
+
+// Add a dictionary for sensor data
+db.addDictionary('sensors', {
+  deflate: {
+    sensor: 's',
+    temperature: 't',
+    humidity: 'h'
+  }
+});
+
+// Use the dictionary when writing
+await db.write('readings', 'r1', { sensor: 'DHT22', temperature: 23.5 }, undefined, 'sensors');
+```
+
+### removeDictionary()
+
+Remove a dictionary by name.
+
+```typescript
+db.removeDictionary(name: string): boolean
+```
+
+**Parameters:**
+
+- `name`: The name of the dictionary to remove
+
+**Returns:** `true` if dictionary was removed, `false` if it didn't exist
+
+**Example:**
+
+```typescript
+db.removeDictionary('sensors');
+```
+
+### listDictionaries()
+
+List all available dictionary names.
+
+```typescript
+db.listDictionaries(): string[]
+```
+
+**Returns:** Array of dictionary names
+
+**Example:**
+
+```typescript
+const dictionaries = db.listDictionaries();
+console.log(dictionaries); // ['sensors', 'users', 'metrics']
+```
+
 ## Item Expiration
 
 Setting an expiration timestamp is easy:
@@ -748,4 +885,4 @@ MIT. See `LICENSE` file for details.
 
 ## Related Projects
 
-- [MikroDB](https://github.com/mikaelvesavuori/mikrodb) - A more feature-rich database with WAL, change data capture, and API server mode
+- [MikroDB](https://github.com/mikaelvesavuori/mikrodb)

@@ -10,14 +10,23 @@ import type { Dictionary } from './Dictionary';
  * };
  *
  * @example
- * // With dictionary compression (provide deflate OR inflate, not both)
+ * // With multiple named dictionaries for different data types
  * const options = {
  *   databaseDirectory: './data',
- *   dictionary: {
- *     deflate: {
- *       sensor: 's',
- *       temperature: 't',
- *       timestamp: 'ts'
+ *   dictionaries: {
+ *     sensors: {
+ *       deflate: {
+ *         sensor: 's',
+ *         temperature: 't',
+ *         humidity: 'h'
+ *       }
+ *     },
+ *     users: {
+ *       deflate: {
+ *         username: 'u',
+ *         email: 'e',
+ *         created: 'c'
+ *       }
  *     }
  *   }
  * };
@@ -26,11 +35,13 @@ import type { Dictionary } from './Dictionary';
  * // Or provide inflate mapping (inverse auto-generated)
  * const options = {
  *   databaseDirectory: './data',
- *   dictionary: {
- *     inflate: {
- *       s: 'sensor',
- *       t: 'temperature',
- *       ts: 'timestamp'
+ *   dictionaries: {
+ *     myDict: {
+ *       inflate: {
+ *         s: 'sensor',
+ *         t: 'temperature',
+ *         ts: 'timestamp'
+ *       }
  *     }
  *   }
  * };
@@ -45,14 +56,24 @@ import type { Dictionary } from './Dictionary';
 export interface DatabaseOptions {
   databaseDirectory: string;
   /**
-   * Optional dictionary for compressing database records.
-   * Provide either deflate (long → short) or inflate (short → long).
+   * Optional set of named dictionaries for compressing database records.
+   * Each dictionary is identified by a name (key) and contains compression mappings.
+   * Provide either deflate (long → short) or inflate (short → long) for each dictionary.
    * The inverse mapping will be auto-generated.
    *
-   * Note: DatabaseRecord metadata (value, version, timestamp, expiration)
+   * When writing data, you can specify which dictionary to use via the dictionaryName parameter.
+   * This allows different compression strategies for different types of data.
+   *
+   * Note: DatabaseRecord metadata (value, version, timestamp, expiration, dictionaryName)
    * is ALWAYS compressed automatically - no need to include in dictionary.
+   *
+   * @example
+   * dictionaries: {
+   *   sensors: { deflate: { sensor: 's', temperature: 't' } },
+   *   users: { deflate: { username: 'u', email: 'e' } }
+   * }
    */
-  dictionary?: Dictionary;
+  dictionaries?: { [key: string]: Dictionary };
   /**
    * Enable durable writes for guaranteed persistence.
    *
@@ -79,4 +100,5 @@ export interface DatabaseRecord {
   version: number;
   timestamp: number;
   expiration: number | null;
+  dictionaryName?: string;
 }
