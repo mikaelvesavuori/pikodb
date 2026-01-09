@@ -4,17 +4,25 @@
   "version": "1.0.1",
   "author": "Mikael Vesavuori",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mikaelvesavuori/pikodb"
+  },
+  "bugs": {
+    "url": "https://github.com/mikaelvesavuori/pikodb/issues"
+  },
+  "homepage": "https://github.com/mikaelvesavuori/pikodb",
+  "files": [
+    "/lib",
+    "!/lib/**/*.map",
+    "!/tests"
+  ],
   "exports": {
     ".": {
       "require": "./lib/index.js",
       "import": "./lib/index.mjs"
     }
   },
-  "files": [
-    "/lib",
-    "!/lib/**/*.map",
-    "!/tests"
-  ],
   "scripts": {
     "start": "npx tsx src/index.ts",
     "test": "npx vitest run --coverage",
