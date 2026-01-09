@@ -1,8 +1,9 @@
 {
   "name": "pikodb",
   "description": "PikoDB is a reliable, simple, fast, no-frills key-value database",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "Mikael Vesavuori",
+  "license": "MIT",
   "exports": {
     ".": {
       "require": "./lib/index.js",
