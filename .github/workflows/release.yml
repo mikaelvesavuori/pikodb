@@ -45,4 +45,4 @@ jobs:
           npm run build
           git config --global user.email ${{ secrets.GIT_EMAIL }}
           git config --global user.name ${{ secrets.GIT_NAME }}
-          npm publish
+          npm publish --provenance --access public
